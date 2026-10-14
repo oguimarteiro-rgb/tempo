@@ -25,14 +25,17 @@ def criar(conn, tabela, nome, cor="#3584e4"):
     try:
         cur = conn.execute(f"insert into {tabela}(nome, cor) values(?, ?)", (nome.strip(), cor))
     except sqlite3.IntegrityError:
-        raise ValueError(f"já existe {tabela[:-1]} chamado {nome!r}")
+        raise ValueError(f"já existe {tabela[:-1]} chamado {nome!r}") from None
     conn.commit()
     return cur.lastrowid
 
 
 def renomear(conn, tabela, id, nome):
     _validar(tabela)
-    conn.execute(f"update {tabela} set nome = ? where id = ?", (nome.strip(), id))
+    try:
+        conn.execute(f"update {tabela} set nome = ? where id = ?", (nome.strip(), id))
+    except sqlite3.IntegrityError:
+        raise ValueError(f"já existe {tabela[:-1]} chamado {nome!r}") from None
     conn.commit()
 
 

@@ -27,3 +27,9 @@ def test_nome_duplicado(conn):
     cadastros.criar(conn, "clientes", "Hornero")
     with pytest.raises(ValueError):
         cadastros.criar(conn, "clientes", "Hornero")
+
+def test_renomear_duplicado(conn):
+    cadastros.criar(conn, "clientes", "Hornero")
+    outro = cadastros.criar(conn, "clientes", "Viretto")
+    with pytest.raises(ValueError):
+        cadastros.renomear(conn, "clientes", outro, "Hornero")
