@@ -6,7 +6,7 @@ from gi.repository import Adw, Gdk, Gtk
 from tempo import esquecida
 from tempo.janela.cadastros_view import PaginaCadastros
 from tempo.janela.gargalos_view import PaginaGargalos
-from tempo.janela.hoje import PaginaHoje
+from tempo.janela.hoje import SEM_CLIENTE, PaginaHoje
 
 
 CSS = ".cronometro { font-size: 2.6em; font-weight: 300; }"
@@ -62,7 +62,7 @@ class Janela(Adw.ApplicationWindow):
             return
         d = Adw.AlertDialog(
             heading="Entrada ficou aberta",
-            body=f"'{e['cliente'] or 'Sem cliente'} · {e['atividade']}' está rodando desde {e['inicio'][11:16]} de {e['inicio'][8:10]}/{e['inicio'][5:7]}. O que fazer?",
+            body=f"'{e['cliente'] or SEM_CLIENTE} · {e['atividade']}' está rodando desde {e['inicio'][11:16]} de {e['inicio'][8:10]}/{e['inicio'][5:7]}. O que fazer?",
         )
         d.add_response("inicio", "Encerrar no início")
         d.add_response("agora", "Encerrar agora")

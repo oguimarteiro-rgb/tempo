@@ -3,7 +3,7 @@ from datetime import date, datetime, time
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib, Gtk
+from gi.repository import Adw, GLib, Gtk, Pango
 
 from tempo import cadastros, entradas, gargalos
 
@@ -28,8 +28,9 @@ class CartaoTimer(Gtk.Box):
         self._tick = None
         self._inicio = None
         self._clientes, self._atividades = [], []
-        self._cid, self._aid = None, None  # seleção lembrada entre redesenhos; None antes do 1º uso
-        self._tem_selecao = False
+        self._cid, self._aid = None, None  # seleção lembrada entre redesenhos
+        self._tem_selecao = False  # False só até a 1ª carga (aí vem do último usado)
+        self._seguir_entrada = False  # True depois de uma tarefa rodar: os seletores seguem ela
         self.pilha = Gtk.Stack(hexpand=True, margin_top=12, margin_bottom=12, margin_start=12, margin_end=12,
                                transition_type=Gtk.StackTransitionType.CROSSFADE)
         self.append(self.pilha)
@@ -38,7 +39,8 @@ class CartaoTimer(Gtk.Box):
         linha = Gtk.Box(spacing=6)
         self.nome = Gtk.Entry(placeholder_text="No que você está trabalhando?", hexpand=True)
         self.nome.connect("activate", lambda *_: self.iniciar())
-        self.btn_iniciar = Gtk.Button(label="Iniciar", css_classes=["suggested-action"])
+        self.nome.connect("changed", lambda *_: self._habilitar())
+        self.btn_iniciar = Gtk.Button(label="Iniciar", css_classes=["suggested-action"], sensitive=False)
         self.btn_iniciar.connect("clicked", lambda *_: self.iniciar())
         linha.append(self.nome)
         linha.append(self.btn_iniciar)
@@ -54,7 +56,7 @@ class CartaoTimer(Gtk.Box):
         rodando = Gtk.Box(spacing=12)
         textos = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True)
         self.relogio = Gtk.Label(xalign=0, css_classes=["cronometro", "numeric"])
-        self.legenda = Gtk.Label(xalign=0, css_classes=["dim-label"], ellipsize=3)  # Pango.EllipsizeMode.END
+        self.legenda = Gtk.Label(xalign=0, css_classes=["dim-label"], ellipsize=Pango.EllipsizeMode.END)
         textos.append(self.relogio)
         textos.append(self.legenda)
         self.btn_parar = Gtk.Button(label="Parar", css_classes=["destructive-action"], valign=Gtk.Align.CENTER)
@@ -62,6 +64,7 @@ class CartaoTimer(Gtk.Box):
         rodando.append(textos)
         rodando.append(self.btn_parar)
         self.pilha.add_named(rodando, "rodando")
+        # O destroy da janela faz unrealize, e é aí que o timer de 1 s morre.
         self.connect("unrealize", lambda *_: self._parar_tick())
 
     # --- estado ---
@@ -69,6 +72,7 @@ class CartaoTimer(Gtk.Box):
         e = entradas.atual(self.app.conn)
         if e:
             self._inicio = e["inicio"]
+            self._cid, self._aid, self._seguir_entrada = e["cliente_id"], e["atividade_id"], True
             partes = [_nome_cliente(e), e["atividade"]]
             if e["descricao"]:
                 partes.append(e["descricao"])
@@ -81,6 +85,8 @@ class CartaoTimer(Gtk.Box):
             self._parar_tick()
             self._carregar_opcoes()
             self.pilha.set_visible_child_name("parado")
+            if self.get_mapped():
+                self.nome.grab_focus()
 
     def _bater(self):
         if self._inicio is None:
@@ -96,14 +102,18 @@ class CartaoTimer(Gtk.Box):
         self._inicio = None
 
     def _carregar_opcoes(self):
-        if self._tem_selecao:
+        """Seleção: a tarefa que acabou de rodar; senão o que estava nos seletores; na 1ª carga, o último usado.
+        Item lembrado que foi arquivado cai no primeiro da lista (Sem cliente / primeira atividade)."""
+        if self._seguir_entrada:
+            self._seguir_entrada = False
+        elif self._tem_selecao:
             self._cid = self._clientes[self.cli.get_selected()]["id"] if self._clientes else None
             self._aid = self._atividades[self.ati.get_selected()]["id"] if self._atividades else None
         else:
             ultimo = entradas.recentes(self.app.conn, 1)
             if ultimo:
                 self._cid, self._aid = ultimo[0]["cliente_id"], ultimo[0]["atividade_id"]
-            self._tem_selecao = True
+        self._tem_selecao = True
         self._clientes = [{"id": None, "nome": SEM_CLIENTE}] + cadastros.listar(self.app.conn, "clientes")
         self._atividades = cadastros.listar(self.app.conn, "atividades")
         for combo, itens, sel in ((self.cli, self._clientes, self._cid), (self.ati, self._atividades, self._aid)):
@@ -111,10 +121,15 @@ class CartaoTimer(Gtk.Box):
             for idx, i in enumerate(itens):
                 if i["id"] == sel:
                     combo.set_selected(idx)
-        self.btn_iniciar.set_sensitive(bool(self._atividades))
+        self._habilitar()
+
+    def _habilitar(self):
+        self.btn_iniciar.set_sensitive(bool(self._atividades) and bool(self.nome.get_text().strip()))
 
     # --- ações ---
     def iniciar(self):
+        if not self.nome.get_text().strip():
+            return  # o nome é obrigatório; Enter vazio não faz nada
         if not self._atividades:
             self.get_root().toast("Cadastre pelo menos uma atividade antes de iniciar")
             return

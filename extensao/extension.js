@@ -12,6 +12,7 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 const NOME = 'br.com.oguim.Tempo';
+const SEM_CLIENTE = 'Sem cliente';
 const CAMINHO = '/br/com/oguim/Tempo/Servico';
 const IFACE = `<node><interface name="br.com.oguim.Tempo.Servico">
   <method name="Iniciar"><arg type="i" direction="in"/><arg type="i" direction="in"/><arg type="s" direction="in"/><arg type="i" direction="out"/></method>
@@ -161,7 +162,8 @@ class Indicador extends PanelMenu.Button {
         });
         this._proxy.ClientesRemote((r, e) => {
             if (this._destruido || e) return;
-            this._clientes = JSON.parse(r[0]);
+            // id 0 = sem cliente, o mesmo valor que o servico entende no Iniciar
+            this._clientes = [{id: 0, nome: SEM_CLIENTE}, ...JSON.parse(r[0])];
             this._preencher(this._subCli, this._clientes, 'cliente');
         });
         this._proxy.AtividadesRemote((r, e) => {
@@ -198,7 +200,7 @@ class Indicador extends PanelMenu.Button {
     _padrao(itens, tipo) {
         if (this._recentesLista === null) return null;
         const r = this._recentesLista[0];
-        const id = r ? (tipo === 'cliente' ? r.cliente_id : r.atividade_id) : null;
+        const id = r ? (tipo === 'cliente' ? (r.cliente_id ?? 0) : r.atividade_id) : null;
         return itens.find(i => i.id === id) ?? itens[0] ?? null;
     }
 
@@ -224,12 +226,12 @@ class Indicador extends PanelMenu.Button {
         this._recentesLista = lista;
         this._recentes.removeAll();
         for (const r of lista) {
-            const item = new PopupMenu.PopupMenuItem(`${r.cliente || 'Sem cliente'} · ${r.atividade}`);
+            const item = new PopupMenu.PopupMenuItem(`${r.cliente || SEM_CLIENTE} · ${r.atividade}`);
             item.connect('activate', () => this._proxy?.IniciarRemote(r.cliente_id ?? 0, r.atividade_id, '', () => {}));
             this._recentes.addMenuItem(item);
         }
         if ((this._clienteSel == null || this._atividadeSel == null) && lista.length > 0) {
-            this._clienteSel = lista[0].cliente_id;
+            this._clienteSel = lista[0].cliente_id ?? 0;
             this._atividadeSel = lista[0].atividade_id;
         }
         // Ultimo recurso: primeiro item de cada lista ja carregada.
@@ -243,19 +245,19 @@ class Indicador extends PanelMenu.Button {
         if (!this._proxy) return;
         if (this._entrada) {
             this._proxy.PararRemote(() => {});
-        } else if (this._clienteSel != null && this._atividadeSel != null) {
-            this._proxy.IniciarRemote(this._clienteSel, this._atividadeSel, this._desc.get_text(), (_r, e) => {
+        } else if (this._atividadeSel != null) {
+            this._proxy.IniciarRemote(this._clienteSel ?? 0, this._atividadeSel, this._desc.get_text(), (_r, e) => {
                 if (!this._destruido && !e) this._desc.set_text('');
             });
         } else {
-            Main.notify('Tempo', 'Cadastre um cliente e uma atividade no relatório antes de iniciar.');
+            Main.notify('Tempo', 'Cadastre pelo menos uma atividade no relatório antes de iniciar.');
         }
     }
 
     // Com um timer rodando, inicia a tarefa escolhida nos seletores (o servico fecha a anterior sem intervalo).
     _trocarTarefa() {
-        if (!this._proxy || this._clienteSel == null || this._atividadeSel == null) return;
-        this._proxy.IniciarRemote(this._clienteSel, this._atividadeSel, this._desc.get_text(), (_r, e) => {
+        if (!this._proxy || this._atividadeSel == null) return;
+        this._proxy.IniciarRemote(this._clienteSel ?? 0, this._atividadeSel, this._desc.get_text(), (_r, e) => {
             if (!this._destruido && !e) this._desc.set_text('');
         });
     }
@@ -264,7 +266,7 @@ class Indicador extends PanelMenu.Button {
         if (this._destruido) return;
         this._entrada = json && json !== 'null' ? JSON.parse(json) : null;
         if (this._entrada) {
-            this._clienteSel = this._entrada.cliente_id;
+            this._clienteSel = this._entrada.cliente_id ?? 0;
             this._atividadeSel = this._entrada.atividade_id;
             this._btn.label.text = 'Parar';
             this._ponto.visible = true;
@@ -291,7 +293,8 @@ class Indicador extends PanelMenu.Button {
         if (!this._entrada) return;
         const seg = segundosDesde(this._entrada.inicio);
         const aviso = seg >= LIMITE_AVISO_SEG ? ' ⚠' : '';
-        this._rotulo.text = `▶ ${fmtDuracao(seg)} · ${this._entrada.cliente || this._entrada.descricao || 'Sem cliente'}${aviso}`;
+        // Sem cliente, mostra a atividade: curta e sempre presente (a descricao e livre e esticaria a barra)
+        this._rotulo.text = `▶ ${fmtDuracao(seg)} · ${this._entrada.cliente || this._entrada.atividade}${aviso}`;
     }
 
     _iniciarTick() {

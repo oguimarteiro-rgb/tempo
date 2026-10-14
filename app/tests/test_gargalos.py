@@ -63,3 +63,9 @@ def test_leitura_total_e_media():
 
 def test_sem_entradas_sem_leituras():
     assert gargalos.leituras([], []) == []
+
+
+def test_sem_cliente_tem_nome_proprio():
+    lista = [e(1, 9, 60, cliente=""), e(1, 10, 30, cliente="")]
+    assert gargalos.por_cliente(lista)[0][0] == "Sem cliente"
+    assert gargalos.por_atividade([e(1, 9, 60, atividade="")])[0][0] == "Sem atividade"

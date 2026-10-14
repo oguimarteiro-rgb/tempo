@@ -13,7 +13,7 @@ os.environ["TEMPO_RUNTIME_DIR"] = os.environ["TEMPO_DIR"]  # não toca o tempo-s
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, GLib, Gtk
 
 from tempo import banco, cadastros, entradas, servico
 from tempo.app import App
@@ -35,6 +35,13 @@ app.servico.emitir = lambda s: avisos.append(s)
 
 jan = Janela(app)
 app.janela = jan  # como do_activate faz: o serviço redesenha a janela ao mudar a entrada
+
+
+def bombear():
+    """Roda o que ficou agendado em idle (o redesenho pedido pelo serviço)."""
+    ctx = GLib.MainContext.default()
+    while ctx.pending():
+        ctx.iteration(False)
 pag = jan.paginas["hoje"]
 assert isinstance(pag, PaginaHoje)
 assert set(jan.paginas) == {"hoje", "gargalos", "cadastros"}
@@ -149,8 +156,15 @@ assert cart._atividades[cart.ati.get_selected()]["id"] == aid
 assert cart._clientes[0]["nome"] == SEM_CLIENTE
 # iniciar só com o nome: hora de início é agora, cronômetro aparece, barra é avisada
 avisos.clear()
+cart.nome.set_text("")
+cart.iniciar(); bombear()
+assert entradas.atual(c) is None and not cart.btn_iniciar.get_sensitive()  # nome vazio não inicia
+cart.nome.set_text("   ")
+cart.iniciar(); bombear()
+assert entradas.atual(c) is None
 cart.nome.set_text("roteiro do reel")
-cart.iniciar()
+assert cart.btn_iniciar.get_sensitive()
+cart.iniciar(); bombear()
 assert cart.pilha.get_visible_child_name() == "rodando"
 e_ab = entradas.atual(c)
 assert e_ab["descricao"] == "roteiro do reel" and e_ab["cliente_id"] == cid and e_ab["atividade_id"] == aid
@@ -160,24 +174,46 @@ assert cart.legenda.get_text() == "Casttema · Edição · roteiro do reel", car
 assert cart.nome.get_text() == "" and cart._tick is not None
 assert avisos and json.loads(avisos[-1])["id"] == e_ab["id"]
 # parar: volta pro estado parado, entrada fechada entra na lista do dia
-cart.parar()
+cart.parar(); bombear()
 assert cart.pilha.get_visible_child_name() == "parado" and cart._tick is None
 assert entradas.atual(c) is None
 assert any(r.get_subtitle() == "roteiro do reel" for r in linhas())
 # iniciar sem cliente: lista mostra "Sem cliente"
 cart.cli.set_selected(0)
 cart.nome.set_text("reunião")
-cart.iniciar()
+cart.iniciar(); bombear()
 assert entradas.atual(c)["cliente_id"] is None
 assert cart.legenda.get_text() == "Sem cliente · Edição · reunião", cart.legenda.get_text()
 # a barra do GNOME parou pelo serviço: a janela redesenha sozinha
-app.servico.chamar("Parar", ())
+app.servico.chamar("Parar", ()); bombear()
 assert cart.pilha.get_visible_child_name() == "parado"
 assert any(r.get_title() == "Sem cliente · Edição" for r in linhas())
 # iniciar pela barra (cliente 0 = sem cliente) também aparece na janela
-app.servico.chamar("Iniciar", (0, aid, "pela barra"))
+app.servico.chamar("Iniciar", (0, aid, "pela barra")); bombear()
 assert cart.pilha.get_visible_child_name() == "rodando" and cart.legenda.get_text() == "Sem cliente · Edição · pela barra"
-cart.parar()
+cart.parar(); bombear()
+# regressão: a barra roda outro cliente · atividade; ao parar, os seletores da janela seguem essa tarefa
+cid_h = cadastros.criar(c, "clientes", "Hornero", "#33d17a")
+aid_c = next(a["id"] for a in cadastros.listar(c, "atividades") if a["nome"] != "Edição")
+cart.cli.set_selected(cart._clientes.index(next(i for i in cart._clientes if i["id"] == cid)))
+app.servico.chamar("Iniciar", (cid_h, aid_c, "pela barra 2")); bombear()
+app.servico.chamar("Parar", ()); bombear()
+assert cart._clientes[cart.cli.get_selected()]["id"] == cid_h, cart._clientes[cart.cli.get_selected()]
+assert cart._atividades[cart.ati.get_selected()]["id"] == aid_c
+# parado → parado: o que o oguim escolheu nos seletores fica
+cart.cli.set_selected(0); jan.atualizar()
+assert cart._clientes[cart.cli.get_selected()]["id"] is None
+# a barra inicia com a aba Hoje escondida; ao voltar pra Hoje o cartão está rodando
+jan.stack.set_visible_child_name("gargalos")
+app.servico.chamar("Iniciar", (cid_h, aid_c, "escondida")); bombear()
+jan.stack.set_visible_child_name("hoje")
+assert cart.pilha.get_visible_child_name() == "rodando" and cart.legenda.get_text() == "Hornero · " + next(a["nome"] for a in cart._atividades if a["id"] == aid_c) + " · escondida"
+cart.parar(); bombear()
+# aba Cadastros visível: mudança de entrada não reconstrói a lista
+jan.stack.set_visible_child_name("cadastros")
+app.servico.chamar("Iniciar", (cid_h, aid_c, "x")); bombear()
+app.servico.chamar("Parar", ()); bombear()
+jan.stack.set_visible_child_name("hoje")
 # editar entrada sem cliente: diálogo abre em "Sem cliente" e salvar mantém
 ent_sc = next(e for e in entradas.do_dia(c, t.date()) if e["descricao"] == "reunião")
 d8 = DialogoEntrada(jan, app, ent_sc, jan.atualizar)
@@ -185,8 +221,9 @@ assert d8.clientes[d8.cli.get_selected()]["id"] is None
 d8._on_resp(None, "salvar")
 assert entradas.por_id(c, ent_sc["id"])["cliente_id"] is None
 for e in entradas.do_dia(c, t.date()):
-    if e["descricao"] in ("roteiro do reel", "reunião", "pela barra"):
+    if e["descricao"] in ("roteiro do reel", "reunião", "pela barra", "pela barra 2", "escondida", "x"):
         entradas.apagar(c, e["id"])
+cadastros.arquivar(c, "clientes", cid_h)
 jan.atualizar()
 
 # esquecida: sem entrada aberta, não abre diálogo

@@ -20,11 +20,14 @@ def fmt_h(minutos):
     return f"{h}h{m:02d}"
 
 
+SEM = {"cliente": "Sem cliente", "atividade": "Sem atividade"}
+
+
 def _agrupar(entradas, chave, cor_de):
     mins = defaultdict(int)
     cores = {}
     for e in entradas:
-        k = e[chave] or "(sem)"
+        k = e[chave] or SEM[chave]
         mins[k] += e["minutos"]
         cores.setdefault(k, cor_de(e))
     return sorted(((k, v, cores[k]) for k, v in mins.items()), key=lambda x: -x[1])
@@ -93,7 +96,7 @@ def _leitura_cliente(atual):
     if not clientes:
         return None
     nome, mins, _ = clientes[0]
-    do_cliente = [e for e in atual if (e["cliente"] or "(sem)") == nome]
+    do_cliente = [e for e in atual if (e["cliente"] or SEM["cliente"]) == nome]
     atividade = por_atividade(do_cliente)[0][0]
     return f"{nome}: {fmt_h(mins)}, maior parte em {atividade}"
 

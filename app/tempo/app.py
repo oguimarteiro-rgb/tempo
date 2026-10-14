@@ -58,8 +58,17 @@ class App(Adw.Application):
         return True
 
     def _mudou(self):
-        if self.janela is not None:
-            self.janela.atualizar()
+        # Em idle: a resposta D-Bus sai antes do redesenho (erro de tela não vira erro pra barra)
+        # e várias mudanças seguidas viram um redesenho só.
+        if self.janela is not None and not getattr(self, "_redesenho_pendente", False):
+            self._redesenho_pendente = True
+            GLib.idle_add(self._redesenhar)
+
+    def _redesenhar(self):
+        self._redesenho_pendente = False
+        if self.janela is not None and self.janela.stack.get_visible_child_name() != "cadastros":
+            self.janela.atualizar()  # Cadastros não muda com entrada; Hoje e Gargalos mudam
+        return GLib.SOURCE_REMOVE
 
     def abrir_janela(self):
         GLib.idle_add(self.activate)
