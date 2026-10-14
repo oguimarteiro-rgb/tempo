@@ -224,8 +224,8 @@ class Indicador extends PanelMenu.Button {
         this._recentesLista = lista;
         this._recentes.removeAll();
         for (const r of lista) {
-            const item = new PopupMenu.PopupMenuItem(`${r.cliente} · ${r.atividade}`);
-            item.connect('activate', () => this._proxy?.IniciarRemote(r.cliente_id, r.atividade_id, '', () => {}));
+            const item = new PopupMenu.PopupMenuItem(`${r.cliente || 'Sem cliente'} · ${r.atividade}`);
+            item.connect('activate', () => this._proxy?.IniciarRemote(r.cliente_id ?? 0, r.atividade_id, '', () => {}));
             this._recentes.addMenuItem(item);
         }
         if ((this._clienteSel == null || this._atividadeSel == null) && lista.length > 0) {
@@ -291,7 +291,7 @@ class Indicador extends PanelMenu.Button {
         if (!this._entrada) return;
         const seg = segundosDesde(this._entrada.inicio);
         const aviso = seg >= LIMITE_AVISO_SEG ? ' ⚠' : '';
-        this._rotulo.text = `▶ ${fmtDuracao(seg)} · ${this._entrada.cliente}${aviso}`;
+        this._rotulo.text = `▶ ${fmtDuracao(seg)} · ${this._entrada.cliente || this._entrada.descricao || 'Sem cliente'}${aviso}`;
     }
 
     _iniciarTick() {

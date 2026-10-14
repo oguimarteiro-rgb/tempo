@@ -44,14 +44,17 @@ class Servico:
         self.emitir = emitir
         self.abrir_janela = abrir_janela
         self.inicio_sessao = inicio_sessao or datetime.now().astimezone().replace(microsecond=0)
+        self.ao_mudar = None  # a janela, quando aberta, se pendura aqui para redesenhar
 
     def notificar(self):
         self.emitir(json.dumps(entradas.atual(self.conn)))
+        if self.ao_mudar is not None:
+            self.ao_mudar()
 
     def chamar(self, nome, args):
         if nome == "Iniciar":
             cid, aid, desc = args
-            eid = entradas.iniciar(self.conn, cid, aid, desc)
+            eid = entradas.iniciar(self.conn, cid or None, aid, desc)  # 0 no D-Bus = sem cliente
             self.notificar()
             return (eid,)
         if nome == "Parar":

@@ -3,13 +3,130 @@ from datetime import date, datetime, time
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, GLib, Gtk
 
 from tempo import cadastros, entradas, gargalos
 
 
+SEM_CLIENTE = "Sem cliente"
+
+
 def _hhmm(iso):
     return iso[11:16] if iso else "…"
+
+
+def _nome_cliente(e):
+    return e["cliente"] or SEM_CLIENTE
+
+
+class CartaoTimer(Gtk.Box):
+    """Topo da aba Hoje: parado pede só o nome; rodando mostra o cronômetro e Parar."""
+
+    def __init__(self, app):
+        super().__init__(css_classes=["card"])
+        self.app = app
+        self._tick = None
+        self._inicio = None
+        self._clientes, self._atividades = [], []
+        self._cid, self._aid = None, None  # seleção lembrada entre redesenhos; None antes do 1º uso
+        self._tem_selecao = False
+        self.pilha = Gtk.Stack(hexpand=True, margin_top=12, margin_bottom=12, margin_start=12, margin_end=12,
+                               transition_type=Gtk.StackTransitionType.CROSSFADE)
+        self.append(self.pilha)
+
+        parado = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        linha = Gtk.Box(spacing=6)
+        self.nome = Gtk.Entry(placeholder_text="No que você está trabalhando?", hexpand=True)
+        self.nome.connect("activate", lambda *_: self.iniciar())
+        self.btn_iniciar = Gtk.Button(label="Iniciar", css_classes=["suggested-action"])
+        self.btn_iniciar.connect("clicked", lambda *_: self.iniciar())
+        linha.append(self.nome)
+        linha.append(self.btn_iniciar)
+        seletores = Gtk.Box(spacing=6)
+        self.cli = Gtk.DropDown(tooltip_text="Cliente")
+        self.ati = Gtk.DropDown(tooltip_text="Atividade")
+        seletores.append(self.cli)
+        seletores.append(self.ati)
+        parado.append(linha)
+        parado.append(seletores)
+        self.pilha.add_named(parado, "parado")
+
+        rodando = Gtk.Box(spacing=12)
+        textos = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True)
+        self.relogio = Gtk.Label(xalign=0, css_classes=["cronometro", "numeric"])
+        self.legenda = Gtk.Label(xalign=0, css_classes=["dim-label"], ellipsize=3)  # Pango.EllipsizeMode.END
+        textos.append(self.relogio)
+        textos.append(self.legenda)
+        self.btn_parar = Gtk.Button(label="Parar", css_classes=["destructive-action"], valign=Gtk.Align.CENTER)
+        self.btn_parar.connect("clicked", lambda *_: self.parar())
+        rodando.append(textos)
+        rodando.append(self.btn_parar)
+        self.pilha.add_named(rodando, "rodando")
+        self.connect("unrealize", lambda *_: self._parar_tick())
+
+    # --- estado ---
+    def atualizar(self):
+        e = entradas.atual(self.app.conn)
+        if e:
+            self._inicio = e["inicio"]
+            partes = [_nome_cliente(e), e["atividade"]]
+            if e["descricao"]:
+                partes.append(e["descricao"])
+            self.legenda.set_text(" · ".join(partes))
+            self._bater()
+            if self._tick is None:
+                self._tick = GLib.timeout_add_seconds(1, self._bater)
+            self.pilha.set_visible_child_name("rodando")
+        else:
+            self._parar_tick()
+            self._carregar_opcoes()
+            self.pilha.set_visible_child_name("parado")
+
+    def _bater(self):
+        if self._inicio is None:
+            self._tick = None
+            return GLib.SOURCE_REMOVE
+        self.relogio.set_text(entradas.cronometro(self._inicio))
+        return GLib.SOURCE_CONTINUE
+
+    def _parar_tick(self):
+        if self._tick is not None:
+            GLib.source_remove(self._tick)
+            self._tick = None
+        self._inicio = None
+
+    def _carregar_opcoes(self):
+        if self._tem_selecao:
+            self._cid = self._clientes[self.cli.get_selected()]["id"] if self._clientes else None
+            self._aid = self._atividades[self.ati.get_selected()]["id"] if self._atividades else None
+        else:
+            ultimo = entradas.recentes(self.app.conn, 1)
+            if ultimo:
+                self._cid, self._aid = ultimo[0]["cliente_id"], ultimo[0]["atividade_id"]
+            self._tem_selecao = True
+        self._clientes = [{"id": None, "nome": SEM_CLIENTE}] + cadastros.listar(self.app.conn, "clientes")
+        self._atividades = cadastros.listar(self.app.conn, "atividades")
+        for combo, itens, sel in ((self.cli, self._clientes, self._cid), (self.ati, self._atividades, self._aid)):
+            combo.set_model(Gtk.StringList.new([i["nome"] for i in itens]))
+            for idx, i in enumerate(itens):
+                if i["id"] == sel:
+                    combo.set_selected(idx)
+        self.btn_iniciar.set_sensitive(bool(self._atividades))
+
+    # --- ações ---
+    def iniciar(self):
+        if not self._atividades:
+            self.get_root().toast("Cadastre pelo menos uma atividade antes de iniciar")
+            return
+        cid = self._clientes[self.cli.get_selected()]["id"]
+        aid = self._atividades[self.ati.get_selected()]["id"]
+        entradas.iniciar(self.app.conn, cid, aid, self.nome.get_text())
+        self.nome.set_text("")
+        self.app.servico.notificar()  # avisa a barra do GNOME e redesenha a janela
+
+    def parar(self):
+        entradas.parar(self.app.conn)
+        self.app.servico.notificar()
 
 
 class PaginaHoje(Gtk.Box):
@@ -25,6 +142,8 @@ class PaginaHoje(Gtk.Box):
         btn.connect("clicked", lambda *_: DialogoEntrada(self.get_root(), self.app, None, self.atualizar).present(self.get_root()))
         topo.append(btn)
         self.append(topo)
+        self.cartao = CartaoTimer(app)
+        self.append(self.cartao)
         self.lista = Gtk.ListBox(css_classes=["boxed-list"], selection_mode=Gtk.SelectionMode.NONE)
         scroll = Gtk.ScrolledWindow(vexpand=True, child=self.lista)
         self.append(scroll)
@@ -34,11 +153,12 @@ class PaginaHoje(Gtk.Box):
     def atualizar(self):
         hoje = date.today()
         self.titulo.set_text(hoje.strftime("%A, %d/%m").capitalize())
+        self.cartao.atualizar()
         while (filho := self.lista.get_first_child()) is not None:
             self.lista.remove(filho)
         lista = entradas.do_dia(self.app.conn, hoje)
         for e in lista:
-            row = Adw.ActionRow(title=f"{e['cliente']} · {e['atividade']}", subtitle=e["descricao"], activatable=True)
+            row = Adw.ActionRow(title=f"{_nome_cliente(e)} · {e['atividade']}", subtitle=e["descricao"], activatable=True)
             row.add_suffix(Gtk.Label(label=f"{_hhmm(e['inicio'])}–{_hhmm(e['fim'])}   {gargalos.fmt_h(e['minutos'])}",
                                      css_classes=["numeric"]))
             row.connect("activated", lambda _r, ent=e: DialogoEntrada(self.get_root(), self.app, ent, self.atualizar).present(self.get_root()))
@@ -80,6 +200,8 @@ class DialogoEntrada(Adw.AlertDialog):
     def _itens(self, tabela, id_da_entrada):
         """Ativos, mais o arquivado da própria entrada (no fim), para Salvar não trocar o vínculo."""
         itens = cadastros.listar(self.app.conn, tabela)
+        if tabela == "clientes":
+            itens.insert(0, {"id": None, "nome": SEM_CLIENTE})
         if id_da_entrada is not None and all(i["id"] != id_da_entrada for i in itens):
             for i in cadastros.listar(self.app.conn, tabela, incluir_arquivados=True):
                 if i["id"] == id_da_entrada:
@@ -108,8 +230,8 @@ class DialogoEntrada(Adw.AlertDialog):
             if resp == "apagar":
                 entradas.apagar(self.app.conn, self.entrada["id"])
             elif resp == "salvar":
-                if not self.clientes or not self.atividades:
-                    raise ValueError("cadastre pelo menos um cliente e uma atividade")
+                if not self.atividades:
+                    raise ValueError("cadastre pelo menos uma atividade")
                 cid = self.clientes[self.cli.get_selected()]["id"]
                 aid = self.atividades[self.ati.get_selected()]["id"]
                 base = (self.entrada or {}).get("inicio")

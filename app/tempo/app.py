@@ -53,8 +53,13 @@ class App(Adw.Application):
         self._emitir = servico.emissor(conn_dbus, servico.CAMINHO)
         self.servico = servico.Servico(self.conn, emitir=self._emitir, abrir_janela=self.abrir_janela,
                                        inicio_sessao=sessao.inicio_sessao(pasta_runtime()))
+        self.servico.ao_mudar = self._mudou
         self._registro = servico.registrar(conn_dbus, servico.CAMINHO, self.servico)
         return True
+
+    def _mudou(self):
+        if self.janela is not None:
+            self.janela.atualizar()
 
     def abrir_janela(self):
         GLib.idle_add(self.activate)

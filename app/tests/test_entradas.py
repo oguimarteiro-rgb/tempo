@@ -83,3 +83,18 @@ def test_dict_traz_cor_da_atividade(conn, ids):
     e = entradas.por_id(conn, eid)
     assert e["cor"] == "#ff0000"          # cor do cliente continua
     assert e["cor_atividade"] == "#abcdef"
+
+
+def test_cronometro_formata_hhmmss():
+    assert entradas.cronometro(entradas.fmt(T0), T0 + timedelta(seconds=5)) == "00:00:05"
+    assert entradas.cronometro(entradas.fmt(T0), T0 + timedelta(hours=1, minutes=2, seconds=3)) == "01:02:03"
+    assert entradas.cronometro(entradas.fmt(T0), T0 + timedelta(hours=26)) == "26:00:00"
+    assert entradas.cronometro(entradas.fmt(T0), T0 - timedelta(seconds=9)) == "00:00:00"
+
+
+def test_iniciar_sem_cliente(conn, ids):
+    _, a = ids
+    eid = entradas.iniciar(conn, None, a, "reunião", agora=T0)
+    e = entradas.atual(conn, agora=T0 + timedelta(minutes=10))
+    assert e["id"] == eid and e["cliente_id"] is None and e["cliente"] == "" and e["minutos"] == 10
+    assert entradas.recentes(conn)[0]["cliente_id"] is None

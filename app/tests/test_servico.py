@@ -91,3 +91,13 @@ finally:
 def test_inicio_sessao_padrao_sem_microssegundos(conn):
     s = servico.Servico(conn, emitir=lambda j: None, abrir_janela=lambda: None)
     assert s.inicio_sessao.microsecond == 0 and s.inicio_sessao.tzinfo is not None
+
+
+def test_notificar_avisa_a_janela(conn, sv):
+    avisos = []
+    sv.ao_mudar = lambda: avisos.append(1)
+    a = cadastros.listar(conn, "atividades")[0]["id"]
+    sv.chamar("Iniciar", (0, a, "x"))
+    assert avisos == [1]
+    # 0 vindo do D-Bus vira "sem cliente"
+    assert json.loads(sv.chamar("EntradaAtual", ())[0])["cliente_id"] is None

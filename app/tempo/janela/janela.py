@@ -1,7 +1,7 @@
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, Gdk, Gtk
 
 from tempo import esquecida
 from tempo.janela.cadastros_view import PaginaCadastros
@@ -9,10 +9,24 @@ from tempo.janela.gargalos_view import PaginaGargalos
 from tempo.janela.hoje import PaginaHoje
 
 
+CSS = ".cronometro { font-size: 2.6em; font-weight: 300; }"
+
+
+def _instalar_css():
+    tela = Gdk.Display.get_default()
+    if tela is None or getattr(_instalar_css, "feito", False):
+        return
+    prov = Gtk.CssProvider()
+    prov.load_from_string(CSS)
+    Gtk.StyleContext.add_provider_for_display(tela, prov, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    _instalar_css.feito = True
+
+
 class Janela(Adw.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title="Tempo", default_width=760, default_height=560)
         self.app = app
+        _instalar_css()
         self.stack = Adw.ViewStack()
         self.paginas = {}
         self._adicionar("hoje", "Hoje", "x-office-calendar-symbolic", PaginaHoje(app))
@@ -48,7 +62,7 @@ class Janela(Adw.ApplicationWindow):
             return
         d = Adw.AlertDialog(
             heading="Entrada ficou aberta",
-            body=f"'{e['cliente']} · {e['atividade']}' está rodando desde {e['inicio'][11:16]} de {e['inicio'][8:10]}/{e['inicio'][5:7]}. O que fazer?",
+            body=f"'{e['cliente'] or 'Sem cliente'} · {e['atividade']}' está rodando desde {e['inicio'][11:16]} de {e['inicio'][8:10]}/{e['inicio'][5:7]}. O que fazer?",
         )
         d.add_response("inicio", "Encerrar no início")
         d.add_response("agora", "Encerrar agora")

@@ -26,6 +26,12 @@ def parse(s):
     return datetime.fromisoformat(s)
 
 
+def cronometro(inicio_iso, agora=None):
+    """Tempo corrido desde o início como HH:MM:SS (horas não viram dias)."""
+    seg = max(0, int(((agora or agora_local()) - parse(inicio_iso)).total_seconds()))
+    return f"{seg // 3600:02d}:{seg % 3600 // 60:02d}:{seg % 60:02d}"
+
+
 def _dict(row, agora=None):
     fim = row["fim"]
     ini = parse(row["inicio"])

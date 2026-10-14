@@ -1,4 +1,5 @@
 """Fumaça da janela (sem apresentar). Rodar: dbus-run-session -- python3 app/tests/smoke_janela.py"""
+import json
 import os
 import sys
 import tempfile
@@ -33,6 +34,7 @@ avisos = []
 app.servico.emitir = lambda s: avisos.append(s)
 
 jan = Janela(app)
+app.janela = jan  # como do_activate faz: o serviço redesenha a janela ao mudar a entrada
 pag = jan.paginas["hoje"]
 assert isinstance(pag, PaginaHoje)
 assert set(jan.paginas) == {"hoje", "gargalos", "cadastros"}
@@ -134,6 +136,58 @@ assert depois["descricao"] == "só a descrição" and depois["cliente_id"] == ci
 d7 = DialogoEntrada(jan, app, None, jan.atualizar)
 assert all(i["id"] != cid2 for i in d7.clientes)
 entradas.apagar(c, eid_arq)
+
+# --- cartão do cronômetro na aba Hoje ---
+from tempo.janela.hoje import CartaoTimer, SEM_CLIENTE
+cart = pag.cartao
+assert isinstance(cart, CartaoTimer)
+jan.atualizar()
+assert cart.pilha.get_visible_child_name() == "parado"
+# pré-seleção vem da última entrada (Casttema · Edição)
+assert cart._clientes[cart.cli.get_selected()]["id"] == cid
+assert cart._atividades[cart.ati.get_selected()]["id"] == aid
+assert cart._clientes[0]["nome"] == SEM_CLIENTE
+# iniciar só com o nome: hora de início é agora, cronômetro aparece, barra é avisada
+avisos.clear()
+cart.nome.set_text("roteiro do reel")
+cart.iniciar()
+assert cart.pilha.get_visible_child_name() == "rodando"
+e_ab = entradas.atual(c)
+assert e_ab["descricao"] == "roteiro do reel" and e_ab["cliente_id"] == cid and e_ab["atividade_id"] == aid
+assert abs((datetime.now().astimezone() - entradas.parse(e_ab["inicio"])).total_seconds()) < 5
+assert cart.relogio.get_text().startswith("00:00:0"), cart.relogio.get_text()
+assert cart.legenda.get_text() == "Casttema · Edição · roteiro do reel", cart.legenda.get_text()
+assert cart.nome.get_text() == "" and cart._tick is not None
+assert avisos and json.loads(avisos[-1])["id"] == e_ab["id"]
+# parar: volta pro estado parado, entrada fechada entra na lista do dia
+cart.parar()
+assert cart.pilha.get_visible_child_name() == "parado" and cart._tick is None
+assert entradas.atual(c) is None
+assert any(r.get_subtitle() == "roteiro do reel" for r in linhas())
+# iniciar sem cliente: lista mostra "Sem cliente"
+cart.cli.set_selected(0)
+cart.nome.set_text("reunião")
+cart.iniciar()
+assert entradas.atual(c)["cliente_id"] is None
+assert cart.legenda.get_text() == "Sem cliente · Edição · reunião", cart.legenda.get_text()
+# a barra do GNOME parou pelo serviço: a janela redesenha sozinha
+app.servico.chamar("Parar", ())
+assert cart.pilha.get_visible_child_name() == "parado"
+assert any(r.get_title() == "Sem cliente · Edição" for r in linhas())
+# iniciar pela barra (cliente 0 = sem cliente) também aparece na janela
+app.servico.chamar("Iniciar", (0, aid, "pela barra"))
+assert cart.pilha.get_visible_child_name() == "rodando" and cart.legenda.get_text() == "Sem cliente · Edição · pela barra"
+cart.parar()
+# editar entrada sem cliente: diálogo abre em "Sem cliente" e salvar mantém
+ent_sc = next(e for e in entradas.do_dia(c, t.date()) if e["descricao"] == "reunião")
+d8 = DialogoEntrada(jan, app, ent_sc, jan.atualizar)
+assert d8.clientes[d8.cli.get_selected()]["id"] is None
+d8._on_resp(None, "salvar")
+assert entradas.por_id(c, ent_sc["id"])["cliente_id"] is None
+for e in entradas.do_dia(c, t.date()):
+    if e["descricao"] in ("roteiro do reel", "reunião", "pela barra"):
+        entradas.apagar(c, e["id"])
+jan.atualizar()
 
 # esquecida: sem entrada aberta, não abre diálogo
 jan.checar_esquecida()
