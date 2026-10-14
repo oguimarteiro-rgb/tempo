@@ -6,6 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ["TEMPO_DIR"] = tempfile.mkdtemp(prefix="tempo-smoke-")
+os.environ["TEMPO_RUNTIME_DIR"] = os.environ["TEMPO_DIR"]  # não toca o tempo-sessao da sessão real
 
 import gi
 gi.require_version("Gtk", "4.0")

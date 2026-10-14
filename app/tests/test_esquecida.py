@@ -40,3 +40,37 @@ def test_passou_de_12h(conn, aberta):
     longa = entradas.atual(conn, agora=T0 + timedelta(hours=12))
     assert esquecida.passou_de_12h(curta) is False
     assert esquecida.passou_de_12h(longa) is True
+
+def test_entrada_do_mesmo_segundo_da_sessao_nao_e_esquecida(conn, tmp_path):
+    from tempo import sessao
+    c = cadastros.criar(conn, "clientes", "Casttema")
+    a = cadastros.listar(conn, "atividades")[0]["id"]
+    agora = T0.replace(microsecond=700000)
+    inicio = sessao.inicio_sessao(tmp_path, agora=agora)
+    entradas.iniciar(conn, c, a, agora=agora)  # gravada truncada em segundos
+    assert inicio.microsecond == 0
+    assert esquecida.detectar(conn, inicio) is None
+
+
+def test_resolver_com_id_age_so_na_entrada_detectada(conn, aberta):
+    detectada = esquecida.detectar(conn, inicio_sessao=T0 + timedelta(hours=8))
+    c = cadastros.criar(conn, "clientes", "Viretto")
+    a = cadastros.listar(conn, "atividades")[0]["id"]
+    nova = entradas.iniciar(conn, c, a, agora=T0 + timedelta(hours=9))  # fecha a antiga
+    antiga_antes = entradas.por_id(conn, aberta)
+    esquecida.resolver(conn, "descartar", id=detectada["id"])
+    assert entradas.por_id(conn, nova) is not None
+    assert entradas.atual(conn)["id"] == nova
+    assert entradas.por_id(conn, aberta) == antiga_antes
+    assert antiga_antes["fim"] is not None
+
+
+def test_resolver_com_id_inexistente_nao_faz_nada(conn, aberta):
+    esquecida.resolver(conn, "inicio", id=aberta + 99)
+    assert entradas.atual(conn)["id"] == aberta
+    assert entradas.por_id(conn, aberta)["fim"] is None
+
+
+def test_resolver_com_id_da_aberta_age(conn, aberta):
+    esquecida.resolver(conn, "agora", agora=T0 + timedelta(hours=1), id=aberta)
+    assert entradas.por_id(conn, aberta)["minutos"] == 60

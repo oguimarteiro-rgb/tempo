@@ -11,11 +11,13 @@ def detectar(conn, inicio_sessao):
     return None
 
 
-def resolver(conn, modo, agora=None):
+def resolver(conn, modo, agora=None, id=None):
+    """Resolve a entrada esquecida. Com id, só age se essa entrada ainda estiver aberta:
+    se outra começou entre a pergunta e a resposta, não mexe em nada."""
     if modo not in MODOS:
         raise ValueError(f"modo inválido: {modo}")
-    e = entradas.atual(conn)
-    if not e:
+    e = entradas.atual(conn) if id is None else entradas.por_id(conn, id)
+    if not e or e["fim"] is not None:
         return
     if modo == "inicio":
         entradas.editar(conn, e["id"], fim=e["inicio"])

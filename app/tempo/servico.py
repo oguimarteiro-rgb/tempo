@@ -43,7 +43,7 @@ class Servico:
         self.conn = conn
         self.emitir = emitir
         self.abrir_janela = abrir_janela
-        self.inicio_sessao = inicio_sessao or datetime.now().astimezone()
+        self.inicio_sessao = inicio_sessao or datetime.now().astimezone().replace(microsecond=0)
 
     def notificar(self):
         self.emitir(json.dumps(entradas.atual(self.conn)))

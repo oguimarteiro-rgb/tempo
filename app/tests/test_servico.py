@@ -62,7 +62,7 @@ def test_processo_real_responde_no_dbus(tmp_path):
     script = f"""
 import gi, subprocess, sys, time, os
 from gi.repository import Gio, GLib
-env = dict(os.environ, TEMPO_DIR={str(tmp_path)!r}, PYTHONPATH={APP_DIR!r})
+env = dict(os.environ, TEMPO_DIR={str(tmp_path)!r}, TEMPO_RUNTIME_DIR={str(tmp_path)!r}, PYTHONPATH={APP_DIR!r})
 p = subprocess.Popen([sys.executable, "-m", "tempo.app"], env=env)
 try:
     for _ in range(50):
@@ -83,3 +83,11 @@ finally:
                          capture_output=True, text=True, timeout=60)
     assert "VERSAO 0.1.0" in out.stdout, out.stdout + out.stderr
     assert (tmp_path / "tempo.db").exists()
+    # a sessão vai para o diretório de runtime, e o backup só sai depois de o banco abrir
+    assert (tmp_path / "tempo-sessao").exists()
+    assert len(list((tmp_path / "backup").glob("tempo-*.db"))) == 1
+
+
+def test_inicio_sessao_padrao_sem_microssegundos(conn):
+    s = servico.Servico(conn, emitir=lambda j: None, abrir_janela=lambda: None)
+    assert s.inicio_sessao.microsecond == 0 and s.inicio_sessao.tzinfo is not None
