@@ -50,7 +50,7 @@ imprime o comando `dnf` para você rodar no Terminal de verdade e depois continu
 ## Desenvolvimento
 
 ```bash
-cd app && python3 -m pytest -q          # 48 testes
+cd app && python3 -m pytest -q          # testes do núcleo
 app/tests/test_instalar.sh              # instalador com HOME falso
 timeout 90 env GTK_A11Y=none dbus-run-session -- python3 app/tests/smoke_janela.py
 # idem para smoke_gargalos.py e smoke_cadastros.py
@@ -64,9 +64,13 @@ GNOME Shell), `instalar.sh`, `docs/`.
 - A extensão só aparece depois de sair e entrar na sessão.
 - `shell-version` cobre o GNOME 48 a 51. Um GNOME mais novo pede ajuste do
   `metadata.json` e nova instalação.
-- Reinstalar não reinicia um serviço que já está rodando. Para testar uma versão
-  nova, saia e entre na sessão ou rode `pkill -f tempo.app`.
+- Reinstalar não reinicia um serviço que já está rodando (o instalador avisa e
+  mostra o PID). Para usar a versão nova, saia e entre na sessão ou rode `kill <PID>`.
 - Entradas que atravessam a meia-noite não podem ser editadas pela aba Hoje.
+- Entradas de dias anteriores só aparecem nos Gargalos e no CSV: a aba Hoje
+  mostra e edita só o dia atual.
+- Mudar o fuso horário da máquina distorce os filtros por dia (as entradas
+  antigas guardam o fuso em que foram gravadas).
 - A janela ainda não detecta que a extensão foi desativada (por exemplo, após
   atualizar o GNOME). Nesse caso, rode `~/tempo/instalar.sh` de novo.
 

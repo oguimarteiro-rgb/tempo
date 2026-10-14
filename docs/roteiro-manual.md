@@ -1,6 +1,6 @@
 # Roteiro de verificação manual da extensão
 
-A extensão do GNOME Shell não tem teste automático. Este roteiro de 10 passos é a
+A extensão do GNOME Shell não tem teste automático. Este roteiro de 15 passos é a
 verificação dela. Pré-requisito: `~/tempo/instalar.sh` já rodado e sessão reiniciada
 (logout/login). Marque o resultado de cada passo na seção **Registro**, no fim.
 
@@ -27,21 +27,39 @@ verificação dela. Pré-requisito: `~/tempo/instalar.sh` já rodado e sessão r
 7. **Trocar.** Mude Cliente/Atividade no menu e clique em "Trocar para …" (ou inicie outra combinação pelo Recentes). Depois abra a aba Hoje.
    - Esperado: a entrada anterior encerra no mesmo segundo em que a nova começa (o fim da 1ª é igual ao início da 2ª, sem buraco nem sobreposição).
 
-8. **Parar.** Clique em Parar.
-   - Esperado: o rótulo some e o ícone de relógio volta.
+8. **Abrir relatório com a janela já aberta.** Deixe a janela do relatório aberta, coloque outra janela por cima dela (o Terminal, por exemplo) e clique em Abrir relatório no menu.
+   - Esperado: a janela do Tempo vem para a frente, sem abrir uma segunda janela.
 
-9. **Serviço fora.** Rode `pkill -f tempo.app` no Terminal e faça uma ação no indicador (por exemplo, abrir o menu).
-   - Esperado: o indicador fica cinza em até 5 segundos e o menu mostra "Reconectar ao serviço". Ao clicar nele, o D-Bus ativa o serviço de novo e o indicador volta ao normal.
+9. **Horário inválido no diálogo.** Na aba Hoje, clique numa entrada, digite `25:99` no campo Fim e clique em Salvar.
+   - Esperado: aparece o aviso "Não salvou: horário inválido, use HH:MM", o diálogo reabre com o que foi digitado e já recebe o foco (dá para corrigir o campo sem clicar na janela antes). Cancele ao terminar.
 
-10. **Entrada esquecida.** Inicie uma entrada, abra a aba Hoje e edite o início dela para 13 horas atrás (não é preciso mudar o relógio do sistema).
+10. **Reinício do serviço com timer rodando.** Com o timer ainda rodando (do passo 7), ache o PID do serviço no Terminal com `pgrep -f '^(/usr/bin/)?python3 -m tempo\.app'` e rode `kill <PID>` com o número que apareceu. Depois clique em Abrir relatório no menu.
+    - Esperado: o serviço volta sozinho pelo D-Bus e a janela abre normalmente. **Não** pode aparecer o diálogo "Entrada ficou aberta": o timer continua rodando, porque o início da sessão é o do login, não o da subida do serviço.
+
+11. **Parar.** Clique em Parar.
+    - Esperado: o rótulo some e o ícone de relógio volta.
+
+12. **Serviço fora.** Primeiro, rode `kill <PID>` do serviço (PID achado como no passo 10) e abra o menu.
+    - Esperado: abrir o menu reativa o serviço pelo D-Bus, e o indicador **não** fica cinza.
+
+    Para ver o estado cinza, o D-Bus não pode conseguir religar o serviço: renomeie o lançador com `mv ~/.local/bin/tempo ~/.local/bin/tempo.off`, rode `kill <PID>` de novo (o PID muda a cada reativação) e abra o menu.
+    - Esperado: o indicador fica cinza em até 5 segundos e o menu mostra "Reconectar ao serviço".
+
+    Restaure o nome com `mv ~/.local/bin/tempo.off ~/.local/bin/tempo` e clique em Reconectar.
+    - Esperado: o D-Bus ativa o serviço de novo e o indicador volta ao normal.
+
+13. **Aviso de mais de 12 horas.** Faça este passo depois das 13h (a aba Hoje só edita entradas do dia atual, então o início não pode ir para ontem). Inicie uma entrada, abra a aba Hoje e edite o início dela para 00:00 (não é preciso mudar o relógio do sistema).
     - Esperado: o rótulo da barra mostra o aviso ⚠ (entrada com mais de 12 horas). Pare ou apague a entrada ao terminar.
 
-11. **Validação do atalho nas preferências.** Abra as preferências da extensão (Extensões, Tempo, Configurações). No campo "Abrir menu", digite `<Super>y` e clique em aplicar. Depois digite `t` (sem modificador) e aplique.
+14. **Entrada esquecida no login.** Inicie um timer, deixe rodando, saia da sessão e entre de novo.
+    - Esperado: logo depois do login, a janela do Tempo abre sozinha com a pergunta "Entrada ficou aberta" e as opções Encerrar no início, Encerrar agora e Descartar. Escolha uma e confira na aba Hoje que só aquela entrada mudou.
+
+15. **Validação do atalho nas preferências.** Abra as preferências da extensão (Extensões, Tempo, Configurações). No campo "Abrir menu", digite `<Super>y` e clique em aplicar. Depois digite `t` (sem modificador) e aplique.
     - Esperado: `<Super>y` é aceito e passa a abrir o menu no lugar do Super+T. `t` sem modificador deixa o campo com borda de erro e o atalho anterior continua valendo. Volte o padrão `<Super>t` ao terminar.
 
 ## Registro
 
-Os passos 1 a 10 (e a validação do atalho, passo 11) estão **PENDENTES**: aguardam o oguim sair e entrar na sessão para a extensão carregar. Nenhum deles foi executado ainda. Preencha a tabela conforme for executando.
+Os passos 1 a 15 estão **PENDENTES**: aguardam o oguim sair e entrar na sessão para a extensão carregar. Nenhum deles foi executado ainda. Preencha a tabela conforme for executando.
 
 | Data | Versão do GNOME | Passo | Resultado |
 | --- | --- | --- | --- |
@@ -56,5 +74,9 @@ Os passos 1 a 10 (e a validação do atalho, passo 11) estão **PENDENTES**: agu
 |  |  | 9 | pendente |
 |  |  | 10 | pendente |
 |  |  | 11 | pendente |
+|  |  | 12 | pendente |
+|  |  | 13 | pendente |
+|  |  | 14 | pendente |
+|  |  | 15 | pendente |
 
 Depois do passo 5, adicione `docs/tela.png` ao repositório e comite.
