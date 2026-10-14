@@ -53,10 +53,11 @@ function fmtRelogio(seg) {
 const Cartao = GObject.registerClass(
 class Cartao extends St.BoxLayout {
     _init(settings, acoes) {
-        super._init({style_class: 'tempo-cartao', vertical: true, reactive: true, track_hover: true, visible: false});
+        super._init({style_class: 'tempo-cartao', vertical: true, reactive: true, visible: false});
         this._settings = settings;
         this._acoes = acoes;
         this._arrasto = null;
+        this._mostrado = false;  // estado proprio: addTopChrome pode deixar o ator visivel por conta propria
 
         const topo = new St.BoxLayout({x_expand: true});
         this._legenda = new St.Label({style_class: 'tempo-cartao-legenda', x_expand: true, y_align: Clutter.ActorAlign.CENTER});
@@ -80,20 +81,26 @@ class Cartao extends St.BoxLayout {
         this.connect('button-press-event', (_a, ev) => this._pressionou(ev));
         this.connect('motion-event', (_a, ev) => this._moveu(ev));
         this.connect('button-release-event', () => this._soltou());
-        Main.layoutManager.addTopChrome(this, {trackFullscreen: false});
+        // trackFullscreen: some quando ha janela em tela cheia no monitor (video no VLC, playback do Resolve).
+        Main.layoutManager.addTopChrome(this, {trackFullscreen: true});
+        this.hide();
+        this._monitoresId = Main.layoutManager.connect('monitors-changed', () => { if (this._mostrado) this._posicionar(); });
+        this.connect('notify::width', () => { if (this._mostrado && !this._arrasto) this._mover(this.x, this.y); });
     }
 
     mostrar(entrada) {
         const partes = [entrada.cliente || SEM_CLIENTE, entrada.atividade];
         if (entrada.descricao) partes.push(entrada.descricao);
         this._legenda.text = partes.join(' · ');
-        if (!this.visible) {
+        if (!this._mostrado) {
+            this._mostrado = true;
             this.show();
             this._posicionar();
         }
     }
 
     esconder() {
+        this._mostrado = false;
         this.hide();
     }
 
@@ -103,8 +110,13 @@ class Cartao extends St.BoxLayout {
         else this._relogio.remove_style_class_name('aviso');
     }
 
+    // Area util do monitor principal (sem a barra de cima nem docks que reservam espaco).
     _monitor() {
-        return Main.layoutManager.primaryMonitor ?? {x: 0, y: 0, width: 1920, height: 1080};
+        const lm = Main.layoutManager;
+        if (lm.primaryIndex >= 0) {
+            try { return lm.getWorkAreaForMonitor(lm.primaryIndex); } catch (_e) { /* cai no monitor inteiro */ }
+        }
+        return lm.primaryMonitor ?? {x: 0, y: 0, width: 1920, height: 1080};
     }
 
     _posicionar() {
@@ -115,7 +127,7 @@ class Cartao extends St.BoxLayout {
         let y = this._settings.get_int('cartao-y');
         if (x < 0 || y < 0) {
             x = m.x + m.width - w - MARGEM_CARTAO;
-            y = m.y + m.height - h - MARGEM_CARTAO * 4;  // acima da dock
+            y = m.y + m.height - h - MARGEM_CARTAO * 4;  // folga pra dock que nao reserva espaco
         }
         this._mover(x, y, w, h);
         console.log(`Tempo: cartão em ${this.x},${this.y} (${w}x${h})`);
@@ -144,6 +156,7 @@ class Cartao extends St.BoxLayout {
 
     _moveu(ev) {
         if (!this._arrasto) return Clutter.EVENT_PROPAGATE;
+        if (!(ev.get_state() & Clutter.ModifierType.BUTTON1_MASK)) return this._soltou();  // release engolido por outro grab
         const [x, y] = ev.get_coords();
         this._mover(x - this._arrasto.dx, y - this._arrasto.dy);
         this._arrasto.moveu = true;
@@ -161,6 +174,7 @@ class Cartao extends St.BoxLayout {
     }
 
     destroy() {
+        if (this._monitoresId) { Main.layoutManager.disconnect(this._monitoresId); this._monitoresId = 0; }
         Main.layoutManager.removeChrome(this);
         super.destroy();
     }
@@ -192,9 +206,8 @@ class Indicador extends PanelMenu.Button {
         this._sinalId = 0;
         this._iniciado = false;
         this._geracao = 0;
-        this._ultimoId = null;
         this._cartao = new Cartao(settings, {
-            parar: () => this._proxy?.PararRemote(() => {}),
+            parar: () => this._proxy?.PararRemote((_r, e) => { if (e && !this._destruido) this._recarregar(); }),
             fechar: () => this._cartaoVisivel(false),
         });
 
@@ -213,7 +226,7 @@ class Indicador extends PanelMenu.Button {
         this._proxy = new Proxy(Gio.DBus.session, NOME, CAMINHO, (_p, erro) => {
             if (this._destruido || geracao !== this._geracao || !this._proxy) return;
             this._conectarSinal();
-            if (erro) { this._semServico(); return; }
+            if (erro) { console.log(`Tempo: serviço indisponível (${erro.message})`); this._semServico(); return; }
             this._iniciado = true;
             this._recarregar();
         });
@@ -286,25 +299,21 @@ class Indicador extends PanelMenu.Button {
         this._atualizarCartao();
     }
 
+    // O X guarda o id da entrada escondida (sobrevive a bloqueio de tela e reinicio do servico);
+    // uma tarefa nova tem id novo e aparece sozinha.
     _cartaoVisivel(sim) {
-        this._settings.set_boolean('cartao-visivel', sim);
+        this._settings.set_int('cartao-oculto-id', sim || !this._entrada ? -1 : this._entrada.id);
         this._atualizarCartao();
     }
 
-    // O X esconde o cartao so ate a proxima tarefa: um Iniciar novo traz ele de volta.
     _atualizarCartao() {
         if (this._destruido) return;
         if (!this._entrada) {
-            this._ultimoId = null;
             this._cartao.esconder();
             this._mostrarCartao.visible = false;
             return;
         }
-        if (this._entrada.id !== this._ultimoId) {
-            this._ultimoId = this._entrada.id;
-            this._settings.set_boolean('cartao-visivel', true);
-        }
-        const visivel = this._settings.get_boolean('cartao-visivel');
+        const visivel = this._settings.get_int('cartao-oculto-id') !== this._entrada.id;
         this._mostrarCartao.visible = !visivel;
         if (visivel) {
             this._cartao.mostrar(this._entrada);
@@ -320,7 +329,7 @@ class Indicador extends PanelMenu.Button {
         if (!this._proxy || !this._iniciado) { this._conectar(); return; }
         this._proxy.EntradaAtualRemote((r, e) => {
             if (this._destruido) return;
-            if (e) { this._semServico(); return; }
+            if (e) { console.log(`Tempo: EntradaAtual falhou (${e.message})`); this._semServico(); return; }
             this._icone.opacity = 255;
             this._reconectar.visible = false;
             this._aplicar(r[0]);
@@ -461,7 +470,7 @@ class Indicador extends PanelMenu.Button {
         const aviso = seg >= LIMITE_AVISO_SEG ? ' ⚠' : '';
         // Sem cliente, mostra a atividade: curta e sempre presente (a descricao e livre e esticaria a barra)
         this._rotulo.text = `▶ ${fmtDuracao(seg)} · ${this._entrada.cliente || this._entrada.atividade}${aviso}`;
-        if (this._cartao.visible) this._cartao.atualizar(seg);
+        if (this._cartao._mostrado) this._cartao.atualizar(seg);
     }
 
     _iniciarTick() {

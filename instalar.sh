@@ -55,7 +55,7 @@ glib-compile-schemas "$EXT_DIR/schemas/"
 
 echo "-- fontes do cartão (SIL OFL, ver dados/fontes/LEIA-ME.md)"
 mkdir -p "$HOME/.local/share/fonts/tempo"
-cp "$RAIZ"/dados/fontes/*.woff2 "$HOME/.local/share/fonts/tempo/"
+for f in "$RAIZ"/dados/fontes/*.woff2; do [ -e "$f" ] && cp "$f" "$HOME/.local/share/fonts/tempo/"; done
 fc-cache -f "$HOME/.local/share/fonts/tempo" >/dev/null 2>&1 || true
 
 if [ -z "${TEMPO_SEM_GNOME:-}" ]; then
