@@ -54,26 +54,62 @@ class Indicador extends PanelMenu.Button {
         this._caixa.add_child(this._rotulo);
         this.add_child(this._caixa);
 
+        this._destruido = false;
         this._entrada = null;
         this._clientes = [];
         this._atividades = [];
+        this._recentesLista = null;
         this._clienteSel = null;
         this._atividadeSel = null;
         this._tick = 0;
+        this._proxy = null;
+        this._sinalId = 0;
+        this._iniciado = false;
+        this._geracao = 0;
 
         this._montarMenu();
-        this._proxy = new Proxy(Gio.DBus.session, NOME, CAMINHO, (p, erro) => {
+        this._conectar();
+        this.menu.connect('open-state-changed', (_m, aberto) => { if (aberto) this._recarregar(); });
+    }
+
+    // Cria o proxy D-Bus. O sinal e conectado mesmo se o servico ainda nao estiver de pe.
+    _conectar() {
+        this._desconectarSinal();
+        this._iniciado = false;
+        const geracao = ++this._geracao;
+        this._proxy = new Proxy(Gio.DBus.session, NOME, CAMINHO, (_p, erro) => {
+            if (this._destruido || geracao !== this._geracao || !this._proxy) return;
+            this._conectarSinal();
             if (erro) { this._semServico(); return; }
-            this._sinalId = this._proxy.connectSignal('EntradaMudou', (_p, _s, [json]) => this._aplicar(json));
+            this._iniciado = true;
             this._recarregar();
         });
-        this.menu.connect('open-state-changed', (_m, aberto) => { if (aberto) this._recarregar(); });
+    }
+
+    _conectarSinal() {
+        if (!this._proxy || this._sinalId) return;
+        this._sinalId = this._proxy.connectSignal('EntradaMudou', (_p, _s, [json]) => {
+            if (this._destruido) return;
+            this._icone.opacity = 255;
+            this._reconectar.visible = false;
+            this._aplicar(json);
+        });
+    }
+
+    _desconectarSinal() {
+        if (this._proxy && this._sinalId) this._proxy.disconnectSignal(this._sinalId);
+        this._sinalId = 0;
     }
 
     _montarMenu() {
         this._btn = new PopupMenu.PopupMenuItem('Iniciar');
         this._btn.connect('activate', () => this._iniciarOuParar());
         this.menu.addMenuItem(this._btn);
+
+        this._trocar = new PopupMenu.PopupMenuItem('Trocar para');
+        this._trocar.connect('activate', () => this._trocarTarefa());
+        this._trocar.visible = false;
+        this.menu.addMenuItem(this._trocar);
 
         const campo = new PopupMenu.PopupBaseMenuItem({reactive: false, can_focus: false});
         this._desc = new St.Entry({hint_text: 'Descrição (opcional)', x_expand: true, can_focus: true});
@@ -100,6 +136,11 @@ class Indicador extends PanelMenu.Button {
     }
 
     _semServico() {
+        if (this._destruido) return;
+        this._entrada = null;
+        this._btn.label.text = 'Iniciar';
+        this._trocar.visible = false;
+        this._icone.visible = true;
         this._icone.opacity = 120;
         this._rotulo.text = '';
         this._ponto.visible = false;
@@ -108,41 +149,94 @@ class Indicador extends PanelMenu.Button {
     }
 
     _recarregar() {
-        if (!this._proxy) return;
+        if (this._destruido) return;
+        // Proxy que nunca iniciou (servico estava fora): recria, o que ja recarrega tudo.
+        if (!this._proxy || !this._iniciado) { this._conectar(); return; }
         this._proxy.EntradaAtualRemote((r, e) => {
+            if (this._destruido) return;
             if (e) { this._semServico(); return; }
             this._icone.opacity = 255;
             this._reconectar.visible = false;
             this._aplicar(r[0]);
         });
-        this._proxy.ClientesRemote((r, e) => { if (!e) { this._clientes = JSON.parse(r[0]); this._preencher(this._subCli, this._clientes, 'cliente'); } });
-        this._proxy.AtividadesRemote((r, e) => { if (!e) { this._atividades = JSON.parse(r[0]); this._preencher(this._subAti, this._atividades, 'atividade'); } });
-        this._proxy.RecentesRemote((r, e) => { if (!e) this._preencherRecentes(JSON.parse(r[0])); });
+        this._proxy.ClientesRemote((r, e) => {
+            if (this._destruido || e) return;
+            this._clientes = JSON.parse(r[0]);
+            this._preencher(this._subCli, this._clientes, 'cliente');
+        });
+        this._proxy.AtividadesRemote((r, e) => {
+            if (this._destruido || e) return;
+            this._atividades = JSON.parse(r[0]);
+            this._preencher(this._subAti, this._atividades, 'atividade');
+        });
+        this._proxy.RecentesRemote((r, e) => {
+            if (this._destruido) return;
+            if (e) { if (this._recentesLista === null) this._recentesLista = []; return; }
+            this._preencherRecentes(JSON.parse(r[0]));
+        });
+    }
+
+    // Nome do item selecionado (ou null se ainda nao ha lista ou selecao).
+    _nomeSel(tipo) {
+        const itens = tipo === 'cliente' ? this._clientes : this._atividades;
+        const id = tipo === 'cliente' ? this._clienteSel : this._atividadeSel;
+        return itens.find(i => i.id === id)?.nome ?? null;
+    }
+
+    _rotuloSub(sub, tipo) {
+        const nome = this._nomeSel(tipo);
+        sub.label.text = `${tipo === 'cliente' ? 'Cliente' : 'Atividade'}: ${nome ?? '(nenhum)'}`;
+        this._atualizarTrocar();
+    }
+
+    _atualizarTrocar() {
+        this._trocar.visible = this._entrada != null;
+        this._trocar.label.text = `Trocar para ${this._nomeSel('cliente') ?? '(nenhum)'} · ${this._nomeSel('atividade') ?? '(nenhum)'}`;
+    }
+
+    // Padrao quando nao ha selecao: o ultimo usado (recentes), senao o primeiro da lista.
+    _padrao(itens, tipo) {
+        if (this._recentesLista === null) return null;
+        const r = this._recentesLista[0];
+        const id = r ? (tipo === 'cliente' ? r.cliente_id : r.atividade_id) : null;
+        return itens.find(i => i.id === id) ?? itens[0] ?? null;
     }
 
     _preencher(sub, itens, tipo) {
+        if (this._destruido) return;
         sub.menu.removeAll();
         const selId = tipo === 'cliente' ? this._clienteSel : this._atividadeSel;
-        const sel = itens.find(i => i.id === selId) ?? itens[0] ?? null;
+        const sel = itens.find(i => i.id === selId) ?? this._padrao(itens, tipo);
         if (tipo === 'cliente') this._clienteSel = sel?.id ?? null; else this._atividadeSel = sel?.id ?? null;
-        sub.label.text = `${tipo === 'cliente' ? 'Cliente' : 'Atividade'}: ${sel ? sel.nome : '(nenhum)'}`;
+        this._rotuloSub(sub, tipo);
         for (const it of itens) {
             const item = new PopupMenu.PopupMenuItem(it.nome);
             item.connect('activate', () => {
                 if (tipo === 'cliente') this._clienteSel = it.id; else this._atividadeSel = it.id;
-                sub.label.text = `${tipo === 'cliente' ? 'Cliente' : 'Atividade'}: ${it.nome}`;
+                this._rotuloSub(sub, tipo);
             });
             sub.menu.addMenuItem(item);
         }
     }
 
     _preencherRecentes(lista) {
+        if (this._destruido) return;
+        this._recentesLista = lista;
         this._recentes.removeAll();
         for (const r of lista) {
             const item = new PopupMenu.PopupMenuItem(`${r.cliente} · ${r.atividade}`);
             item.connect('activate', () => this._proxy?.IniciarRemote(r.cliente_id, r.atividade_id, '', () => {}));
             this._recentes.addMenuItem(item);
         }
+        if ((this._clienteSel == null || this._atividadeSel == null) && lista.length > 0) {
+            this._clienteSel = lista[0].cliente_id;
+            this._atividadeSel = lista[0].atividade_id;
+        }
+        // Ultimo recurso: primeiro item de cada lista ja carregada.
+        if (this._clienteSel == null) this._clienteSel = this._clientes[0]?.id ?? null;
+        if (this._atividadeSel == null) this._atividadeSel = this._atividades[0]?.id ?? null;
+        this._rotuloSub(this._subCli, 'cliente');
+        this._rotuloSub(this._subAti, 'atividade');
     }
 
     _iniciarOuParar() {
@@ -150,13 +244,24 @@ class Indicador extends PanelMenu.Button {
         if (this._entrada) {
             this._proxy.PararRemote(() => {});
         } else if (this._clienteSel != null && this._atividadeSel != null) {
-            this._proxy.IniciarRemote(this._clienteSel, this._atividadeSel, this._desc.get_text(), () => { this._desc.set_text(''); });
+            this._proxy.IniciarRemote(this._clienteSel, this._atividadeSel, this._desc.get_text(), (_r, e) => {
+                if (!this._destruido && !e) this._desc.set_text('');
+            });
         } else {
             Main.notify('Tempo', 'Cadastre um cliente e uma atividade no relatório antes de iniciar.');
         }
     }
 
+    // Com um timer rodando, inicia a tarefa escolhida nos seletores (o servico fecha a anterior sem intervalo).
+    _trocarTarefa() {
+        if (!this._proxy || this._clienteSel == null || this._atividadeSel == null) return;
+        this._proxy.IniciarRemote(this._clienteSel, this._atividadeSel, this._desc.get_text(), (_r, e) => {
+            if (!this._destruido && !e) this._desc.set_text('');
+        });
+    }
+
     _aplicar(json) {
+        if (this._destruido) return;
         this._entrada = json && json !== 'null' ? JSON.parse(json) : null;
         if (this._entrada) {
             this._clienteSel = this._entrada.cliente_id;
@@ -174,7 +279,12 @@ class Indicador extends PanelMenu.Button {
             this._rotulo.text = '';
             this._pararTick();
         }
-        this._proxy?.RecentesRemote((r, e) => { if (!e) this._preencherRecentes(JSON.parse(r[0])); });
+        this._rotuloSub(this._subCli, 'cliente');
+        this._rotuloSub(this._subAti, 'atividade');
+        this._proxy?.RecentesRemote((r, e) => {
+            if (this._destruido || e) return;
+            this._preencherRecentes(JSON.parse(r[0]));
+        });
     }
 
     _atualizarRotulo() {
@@ -194,8 +304,9 @@ class Indicador extends PanelMenu.Button {
     }
 
     destroy() {
+        this._destruido = true;
         this._pararTick();
-        if (this._proxy && this._sinalId) this._proxy.disconnectSignal(this._sinalId);
+        this._desconectarSinal();
         this._proxy = null;
         super.destroy();
     }
