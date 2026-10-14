@@ -38,6 +38,8 @@ imprime o comando `dnf` para você rodar no Terminal de verdade e depois continu
   - **Gargalos**: 3 gráficos de barras (cliente, atividade, dia da semana), leituras
     automáticas em texto e **Exportar CSV** do período.
   - **Cadastros**: clientes e atividades (adicionar, renomear, cor, arquivar).
+- Teste da extensão sem relogar: `bash app/tests/teste_extensao_headless.sh` sobe um GNOME
+  Shell sem janela num barramento e dconf próprios e confere o cartão no log (1 a 3 min).
 - O atalho é editável nas preferências da extensão, no formato `<Super>t`
   (precisa de pelo menos uma tecla modificadora).
 
