@@ -98,3 +98,12 @@ def test_iniciar_sem_cliente(conn, ids):
     e = entradas.atual(conn, agora=T0 + timedelta(minutes=10))
     assert e["id"] == eid and e["cliente_id"] is None and e["cliente"] == "" and e["minutos"] == 10
     assert entradas.recentes(conn)[0]["cliente_id"] is None
+
+
+def test_recentes_desempata_pelo_id(conn, ids):
+    c, a = ids
+    a2 = cadastros.listar(conn, "atividades")[1]["id"]
+    entradas.criar_manual(conn, T0, T0 + timedelta(hours=1), c, a, "primeira")
+    entradas.criar_manual(conn, T0, T0 + timedelta(hours=1), c, a2, "mesma hora, depois")
+    r = entradas.recentes(conn, 1)[0]
+    assert r["atividade_id"] == a2 and r["ultimo_id"] == 2

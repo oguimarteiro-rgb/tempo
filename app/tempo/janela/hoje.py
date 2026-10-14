@@ -29,8 +29,8 @@ class CartaoTimer(Gtk.Box):
         self._inicio = None
         self._clientes, self._atividades = [], []
         self._cid, self._aid = None, None  # seleção lembrada entre redesenhos
-        self._tem_selecao = False  # False só até a 1ª carga (aí vem do último usado)
-        self._seguir_entrada = False  # True depois de uma tarefa rodar: os seletores seguem ela
+        self._marca = object()  # id da entrada mais recente vista na última carga dos seletores
+        self._rodando = False
         self.pilha = Gtk.Stack(hexpand=True, margin_top=12, margin_bottom=12, margin_start=12, margin_end=12,
                                transition_type=Gtk.StackTransitionType.CROSSFADE)
         self.append(self.pilha)
@@ -72,7 +72,6 @@ class CartaoTimer(Gtk.Box):
         e = entradas.atual(self.app.conn)
         if e:
             self._inicio = e["inicio"]
-            self._cid, self._aid, self._seguir_entrada = e["cliente_id"], e["atividade_id"], True
             partes = [_nome_cliente(e), e["atividade"]]
             if e["descricao"]:
                 partes.append(e["descricao"])
@@ -81,12 +80,14 @@ class CartaoTimer(Gtk.Box):
             if self._tick is None:
                 self._tick = GLib.timeout_add_seconds(1, self._bater)
             self.pilha.set_visible_child_name("rodando")
+            self._rodando = True
         else:
             self._parar_tick()
             self._carregar_opcoes()
             self.pilha.set_visible_child_name("parado")
-            if self.get_mapped():
-                self.nome.grab_focus()
+            if self._rodando and self.get_mapped():
+                self.nome.grab_focus()  # só ao parar: num redesenho parado→parado roubaria o texto digitado
+            self._rodando = False
 
     def _bater(self):
         if self._inicio is None:
@@ -102,18 +103,17 @@ class CartaoTimer(Gtk.Box):
         self._inicio = None
 
     def _carregar_opcoes(self):
-        """Seleção: a tarefa que acabou de rodar; senão o que estava nos seletores; na 1ª carga, o último usado.
-        Item lembrado que foi arquivado cai no primeiro da lista (Sem cliente / primeira atividade)."""
-        if self._seguir_entrada:
-            self._seguir_entrada = False
-        elif self._tem_selecao:
-            self._cid = self._clientes[self.cli.get_selected()]["id"] if self._clientes else None
-            self._aid = self._atividades[self.ati.get_selected()]["id"] if self._atividades else None
-        else:
-            ultimo = entradas.recentes(self.app.conn, 1)
+        """Seleção: se rodou tarefa nova desde a última carga (por aqui, pela barra ou pelo diálogo), segue ela;
+        senão fica o que está nos seletores. Item lembrado que foi arquivado cai no primeiro da lista."""
+        ultimo = entradas.recentes(self.app.conn, 1)
+        marca = ultimo[0]["ultimo_id"] if ultimo else None
+        if marca != self._marca:
+            self._marca = marca
             if ultimo:
                 self._cid, self._aid = ultimo[0]["cliente_id"], ultimo[0]["atividade_id"]
-        self._tem_selecao = True
+        elif self._clientes:
+            self._cid = self._clientes[self.cli.get_selected()]["id"]
+            self._aid = self._atividades[self.ati.get_selected()]["id"] if self._atividades else None
         self._clientes = [{"id": None, "nome": SEM_CLIENTE}] + cadastros.listar(self.app.conn, "clientes")
         self._atividades = cadastros.listar(self.app.conn, "atividades")
         for combo, itens, sel in ((self.cli, self._clientes, self._cid), (self.ati, self._atividades, self._aid)):

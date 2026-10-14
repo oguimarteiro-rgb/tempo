@@ -209,6 +209,15 @@ app.servico.chamar("Iniciar", (cid_h, aid_c, "escondida")); bombear()
 jan.stack.set_visible_child_name("hoje")
 assert cart.pilha.get_visible_child_name() == "rodando" and cart.legenda.get_text() == "Hornero · " + next(a["nome"] for a in cart._atividades if a["id"] == aid_c) + " · escondida"
 cart.parar(); bombear()
+# barra inicia e para com a Hoje escondida: ao voltar, os seletores seguem a tarefa nova
+cart.cli.set_selected(0); cart.nome.set_text("digitando")
+jan.stack.set_visible_child_name("gargalos")
+app.servico.chamar("Iniciar", (cid_h, aid_c, "escondida 2")); bombear()
+app.servico.chamar("Parar", ()); bombear()
+jan.stack.set_visible_child_name("hoje")
+assert cart._clientes[cart.cli.get_selected()]["id"] == cid_h
+assert cart.nome.get_text() == "digitando"  # redesenho não mexe no que foi digitado
+cart.nome.set_text("")
 # aba Cadastros visível: mudança de entrada não reconstrói a lista
 jan.stack.set_visible_child_name("cadastros")
 app.servico.chamar("Iniciar", (cid_h, aid_c, "x")); bombear()
@@ -221,7 +230,7 @@ assert d8.clientes[d8.cli.get_selected()]["id"] is None
 d8._on_resp(None, "salvar")
 assert entradas.por_id(c, ent_sc["id"])["cliente_id"] is None
 for e in entradas.do_dia(c, t.date()):
-    if e["descricao"] in ("roteiro do reel", "reunião", "pela barra", "pela barra 2", "escondida", "x"):
+    if e["descricao"] in ("roteiro do reel", "reunião", "pela barra", "pela barra 2", "escondida", "escondida 2", "x"):
         entradas.apagar(c, e["id"])
 cadastros.arquivar(c, "clientes", cid_h)
 jan.atualizar()

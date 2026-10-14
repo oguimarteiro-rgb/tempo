@@ -126,18 +126,19 @@ def recentes(conn, n=5):
     rows = conn.execute(
         """
         select e.cliente_id, e.atividade_id, c.nome as cliente, c.cor as cor, a.nome as atividade,
-               max(e.inicio) as ultimo
+               max(e.inicio) as ultimo, max(e.id) as ultimo_id
         from entradas e
         left join clientes c on c.id = e.cliente_id
         left join atividades a on a.id = e.atividade_id
         where (c.arquivado is null or c.arquivado = 0) and (a.arquivado is null or a.arquivado = 0)
         group by e.cliente_id, e.atividade_id
-        order by ultimo desc limit ?
+        order by ultimo desc, ultimo_id desc limit ?
         """,
         (n,),
     )
     return [
         {"cliente_id": r["cliente_id"], "atividade_id": r["atividade_id"], "cliente": r["cliente"] or "",
-         "atividade": r["atividade"] or "", "cor": r["cor"] or "#3584e4"}
+         "atividade": r["atividade"] or "", "cor": r["cor"] or "#3584e4",
+         "ultimo": r["ultimo"], "ultimo_id": r["ultimo_id"]}
         for r in rows
     ]
