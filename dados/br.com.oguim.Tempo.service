@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=br.com.oguim.Tempo
+Exec=@BIN@ --gapplication-service

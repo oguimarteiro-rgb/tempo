@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Tempo
+Comment=Rastreador de tempo e gargalos
+Exec=tempo
+Icon=br.com.oguim.Tempo
+Terminal=false
+Categories=Utility;Office;
+DBusActivatable=true
+StartupNotify=true
