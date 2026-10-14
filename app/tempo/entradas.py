@@ -3,7 +3,7 @@ from datetime import datetime, date, timedelta
 CAMPOS_EDITAVEIS = {"inicio", "fim", "cliente_id", "atividade_id", "descricao"}
 
 SELECT = """
-select e.*, c.nome as cliente, c.cor as cor, a.nome as atividade
+select e.*, c.nome as cliente, c.cor as cor, a.nome as atividade, a.cor as cor_atividade
 from entradas e
 left join clientes c on c.id = e.cliente_id
 left join atividades a on a.id = e.atividade_id
@@ -35,6 +35,7 @@ def _dict(row, agora=None):
         "cliente_id": row["cliente_id"], "atividade_id": row["atividade_id"],
         "descricao": row["descricao"], "cliente": row["cliente"] or "",
         "atividade": row["atividade"] or "", "cor": row["cor"] or "#3584e4",
+        "cor_atividade": row["cor_atividade"] or "#3584e4",
         "minutos": int((fim_dt - ini).total_seconds() // 60),
     }
 

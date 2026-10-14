@@ -3,11 +3,11 @@ from tempo import gargalos
 
 TZ = timezone(timedelta(hours=-3))
 
-def e(dia, hora, minutos, cliente="Casttema", atividade="Edição", cor="#ff0000"):
+def e(dia, hora, minutos, cliente="Casttema", atividade="Edição", cor="#ff0000", cor_atividade="#3584e4"):
     ini = datetime(2026, 10, dia, hora, 0, tzinfo=TZ)
     return {"id": 0, "inicio": ini.isoformat(), "fim": (ini + timedelta(minutes=minutos)).isoformat(),
             "cliente_id": 1, "atividade_id": 1, "descricao": "", "cliente": cliente,
-            "atividade": atividade, "cor": cor, "minutos": minutos}
+            "atividade": atividade, "cor": cor, "cor_atividade": cor_atividade, "minutos": minutos}
 
 def test_por_cliente_ordena_desc():
     r = gargalos.por_cliente([e(13, 9, 30, "A"), e(13, 10, 90, "B"), e(13, 12, 10, "A")])
@@ -16,6 +16,10 @@ def test_por_cliente_ordena_desc():
 def test_por_atividade():
     r = gargalos.por_atividade([e(13, 9, 30, atividade="Edição"), e(13, 10, 5, atividade="Reunião")])
     assert [x[0] for x in r] == ["Edição", "Reunião"]
+
+def test_por_atividade_usa_cor_da_atividade():
+    r = gargalos.por_atividade([e(13, 9, 30, atividade="Edição", cor="#ff0000", cor_atividade="#00ff00")])
+    assert r == [("Edição", 30, "#00ff00")]
 
 def test_por_dia_semana_sempre_7():
     r = gargalos.por_dia_semana([e(13, 9, 30)])  # 2026-10-13 é terça

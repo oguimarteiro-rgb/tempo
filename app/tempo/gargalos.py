@@ -35,7 +35,7 @@ def por_cliente(entradas):
 
 
 def por_atividade(entradas):
-    return _agrupar(entradas, "atividade", lambda e: e["cor"])
+    return _agrupar(entradas, "atividade", lambda e: e.get("cor_atividade", COR_PADRAO))
 
 
 def _dia_semana(e):

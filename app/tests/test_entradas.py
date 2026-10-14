@@ -74,3 +74,12 @@ def test_minutos_de_aberta_contam_ate_agora(conn, ids):
     entradas.iniciar(conn, c, a, agora=T0)
     e = entradas.atual(conn, agora=T0 + timedelta(minutes=42))
     assert e["minutos"] == 42
+
+def test_dict_traz_cor_da_atividade(conn, ids):
+    c, a = ids
+    conn.execute("update atividades set cor = '#abcdef' where id = ?", (a,))
+    conn.commit()
+    eid = entradas.criar_manual(conn, T0, T0 + timedelta(hours=1), c, a)
+    e = entradas.por_id(conn, eid)
+    assert e["cor"] == "#ff0000"          # cor do cliente continua
+    assert e["cor_atividade"] == "#abcdef"
