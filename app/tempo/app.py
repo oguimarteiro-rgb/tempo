@@ -9,10 +9,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib
 
 from tempo import backup, banco, esquecida, servico, sessao
-
-
-def pasta_dados():
-    return Path(os.environ.get("TEMPO_DIR") or Path.home() / ".local/share/tempo")
+from tempo.caminhos import pasta_dados  # noqa: F401  (sem GTK: o resumo também usa)
 
 
 def pasta_runtime():

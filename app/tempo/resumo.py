@@ -24,9 +24,12 @@ def _fragmentado(dia):
     return f"Mais fragmentado: {nome}, {n} blocos ({gargalos.fmt_h(mins)})"
 
 
-def _semana(conn, hoje):
+def _semana(conn, hoje, aberta, agora):
+    """Semana atual (fechadas + a tarefa aberta, como a linha do dia) contra a anterior."""
     de, ate = gargalos.periodo("esta_semana", hoje)
     atual = entradas.no_periodo(conn, de, ate)
+    if aberta:
+        atual = atual + [aberta]
     anterior = entradas.no_periodo(conn, *gargalos.periodo_anterior(de, ate))
     total = gargalos.total_minutos(atual)
     if total == 0:
@@ -36,8 +39,11 @@ def _semana(conn, hoje):
     if por_cliente:
         nome, mins, _ = por_cliente[0]
         partes.append(f"{nome} levou mais tempo ({gargalos.fmt_h(mins)})")
-    delta = total - gargalos.total_minutos(anterior)
-    if delta == 0:
+    passada = gargalos.total_minutos(anterior)
+    delta = total - passada
+    if passada == 0:
+        partes.append("semana passada sem registro")
+    elif delta == 0:
         partes.append("igual à semana passada")
     else:
         partes.append(f"{'+' if delta > 0 else '-'}{gargalos.fmt_h(abs(delta))} que a semana passada")
@@ -60,19 +66,19 @@ def texto(conn, hoje=None, agora=None):
     frag = _fragmentado(dia)
     if frag:
         linhas.append(frag)
+    aberta = next((e for e in dia if e["fim"] is None), None)
     if hoje.weekday() == 4:
-        semana = _semana(conn, hoje)
+        semana = _semana(conn, hoje, aberta, agora)
         if semana:
             linhas.append(semana)
-    aberta = next((e for e in dia if e["fim"] is None), None)
     if aberta:
-        linhas.append(f"Ainda rodando: {aberta['cliente'] or 'Sem cliente'} · {aberta['atividade']} "
+        linhas.append(f"Ainda rodando: {aberta['cliente'] or 'Sem cliente'} · {aberta['atividade'] or 'Sem atividade'} "
                       f"desde {aberta['inicio'][11:16]} (não esquece de parar)")
     return "\n".join(linhas)
 
 
 def main():
-    from tempo.app import pasta_dados
+    from tempo.caminhos import pasta_dados
     conn = banco.abrir(str(pasta_dados() / "tempo.db"))
     t = texto(conn)
     if t:

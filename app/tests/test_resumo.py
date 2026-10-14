@@ -71,3 +71,20 @@ def test_semana_igual_e_menor(conn):
     assert "igual à semana passada" in resumo.texto(conn, SEX, agora=t(SEX, 18))
     entradas.criar_manual(conn, t(seg - timedelta(days=6), 9), t(seg - timedelta(days=6), 9, 30), c1, ativ["Edição"], "")
     assert "-30min que a semana passada" in resumo.texto(conn, SEX, agora=t(SEX, 18))
+
+
+def test_sexta_conta_a_tarefa_aberta_na_semana(conn):
+    c1, _, ativ = _ids(conn)
+    entradas.criar_manual(conn, t(SEX, 9), t(SEX, 10), c1, ativ["Edição"], "")
+    entradas.iniciar(conn, c1, ativ["Edição"], "", agora=t(SEX, 17))
+    txt = resumo.texto(conn, SEX, agora=t(SEX, 18))
+    assert txt.splitlines()[0].endswith(": 2h")
+    assert "Semana: 2h, Casttema levou mais tempo (2h), semana passada sem registro" in txt
+
+
+def test_main_nao_depende_de_gtk(tmp_path, monkeypatch):
+    import subprocess, sys, os
+    env = dict(os.environ, TEMPO_DIR=str(tmp_path), PYTHONPATH=os.path.dirname(os.path.dirname(resumo.__file__)))
+    r = subprocess.run([sys.executable, "-c", "import sys, tempo.resumo; tempo.resumo.main(); print('gi' in sys.modules)"],
+                       env=env, capture_output=True, text=True)
+    assert r.returncode == 0 and r.stdout.strip().endswith("False"), r.stdout + r.stderr
