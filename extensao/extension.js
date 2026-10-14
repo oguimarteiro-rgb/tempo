@@ -84,6 +84,9 @@ class Cartao extends St.BoxLayout {
         // trackFullscreen: some quando ha janela em tela cheia no monitor (video no VLC, playback do Resolve).
         Main.layoutManager.addTopChrome(this, {trackFullscreen: true});
         this.hide();
+        // O LayoutManager faz actor.visible = !fullscreen ao abrir o overview, trocar de monitor etc.
+        // Sem tarefa (ou depois do X) ele mostraria o cartao vazio: desfaz na hora.
+        this.connect('notify::visible', () => { if (this.visible && !this._mostrado) this.hide(); });
         this._monitoresId = Main.layoutManager.connect('monitors-changed', () => { if (this._mostrado) this._posicionar(); });
         this.connect('notify::width', () => { if (this._mostrado && !this._arrasto) this._mover(this.x, this.y); });
     }

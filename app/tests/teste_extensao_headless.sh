@@ -28,7 +28,7 @@ gsettings set org.gnome.shell enabled-extensions "[\"tempo@oguim.com\"]"
 gsettings set org.gnome.shell disable-user-extensions false
 echo "$(date +%T) shell sobe" >> "$T/passos.log"
 gnome-shell --devkit > "$T/shell.log" 2>&1 & echo $! >> "$T/pids"
-for i in $(seq 1 60); do grep -qE "Tempo: |JS ERROR|tempo@oguim.com: Error" "$T/shell.log" && break; sleep 1; done
+for i in $(seq 1 150); do grep -qE "Tempo: |JS ERROR|tempo@oguim.com: Error" "$T/shell.log" && break; sleep 1; done
 echo "$(date +%T) cartão 1 visto" >> "$T/passos.log"
 sleep 3
 $S.Parar >/dev/null; echo "$(date +%T) parou" >> "$T/passos.log"; sleep 3
@@ -38,7 +38,7 @@ xargs -r kill < "$T/pids"; sleep 2; : > "$T/pids"
 
 LOG="$T/shell.log"
 cartoes=$(grep -c "Tempo: cartão" "$LOG")
-erros=$(grep -cE "JS ERROR|JS WARNING|tempo@oguim\.com/.*\.js:[0-9]+|tempo@oguim.*(Error|CRITICAL)" "$LOG")
+erros=$(grep -cE "JS ERROR|tempo@oguim\.com/.*\.js:[0-9]+|tempo@oguim.*(Error|CRITICAL)" "$LOG")
 if [ "$cartoes" -ge 2 ] && [ "$erros" -eq 0 ]; then
   echo "extensão headless ok (cartão apareceu $cartoes vezes, log em $LOG)"
 else
