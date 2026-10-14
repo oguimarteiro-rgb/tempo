@@ -12,8 +12,11 @@ verificação dela. Pré-requisito: `~/tempo/instalar.sh` já rodado e sessão r
 2. **Atalho.** Pressione Super+T.
    - Esperado: o menu do indicador abre.
 
-3. **Sem cliente cadastrado.** Com o banco sem clientes, clique em Iniciar.
-   - Esperado: aparece uma notificação pedindo para cadastrar um cliente, e nenhum timer começa.
+3. **Sem cliente cadastrado.** Com o banco sem clientes, abra o menu: o seletor Cliente mostra "Sem cliente". Clique em Iniciar e depois em Parar.
+   - Esperado: o timer começa mesmo sem cliente, a barra mostra `▶ 00:0x · Edição` (a atividade no lugar do cliente), e ao parar a entrada aparece na aba Hoje como "Sem cliente · Edição".
+
+3b. **Iniciar pela janela.** Abra o relatório (Abrir relatório ou comando `tempo`), aba Hoje. O cursor já deve estar na caixa "No que você está trabalhando?". Digite "teste pela janela" e aperte Enter.
+   - Esperado: o cartão vira um cronômetro `00:00:0x` subindo a cada segundo, com "Sem cliente · Edição · teste pela janela" embaixo e o botão Parar. A barra de cima mostra o mesmo timer. Clique em Parar: a entrada desce pra lista do dia e o cursor volta pra caixa do nome. Com a caixa vazia o botão Iniciar fica desabilitado.
 
 4. **Cadastrar cliente.** No menu, clique em Abrir relatório, vá à aba Cadastros, crie o cliente "Casttema" e feche a janela.
    - Esperado: o cliente é salvo e a janela fecha sem erro.

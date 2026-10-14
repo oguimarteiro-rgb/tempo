@@ -29,7 +29,9 @@ imprime o comando `dnf` para você rodar no Terminal de verdade e depois continu
   descrição, seletores **Cliente** e **Atividade**, os 5 **Recentes** (um clique inicia)
   e **Abrir relatório**.
 - A janela do relatório tem três abas:
-  - **Hoje**: entradas do dia, edição, apagar, entrada manual e total.
+  - **Hoje**: cartão pra iniciar só com o nome (Enter) e ver o cronômetro rodando,
+    entradas do dia, edição, apagar, entrada manual e total. Cliente é opcional
+    ("Sem cliente"); atividade e cliente vêm pré-selecionados da última tarefa.
   - **Gargalos**: 3 gráficos de barras (cliente, atividade, dia da semana), leituras
     automáticas em texto e **Exportar CSV** do período.
   - **Cadastros**: clientes e atividades (adicionar, renomear, cor, arquivar).
