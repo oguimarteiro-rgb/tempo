@@ -81,6 +81,10 @@ class PaginaGargalos(Gtk.Box):
             except GLib.Error:
                 return
             texto = exportar.csv_texto(entradas.no_periodo(self.app.conn, de, ate))
-            arq.replace_contents(texto.encode(), None, False, Gio.FileCreateFlags.REPLACE_DESTINATION, None)
+            try:
+                arq.replace_contents(texto.encode(), None, False, Gio.FileCreateFlags.REPLACE_DESTINATION, None)
+            except GLib.Error as e:
+                self.get_root().toast(f"Não foi possível exportar: {e.message}")
+                return
             self.get_root().toast(f"Exportado para {arq.get_basename()}")
         dialogo.save(self.get_root(), None, pronto)

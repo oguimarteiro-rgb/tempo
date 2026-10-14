@@ -53,8 +53,8 @@ class DialogoEntrada(Adw.AlertDialog):
         grupo = Adw.PreferencesGroup()
         v = valores or {}
         self.desc = Adw.EntryRow(title="Descrição", text=v.get("descricao", (entrada or {}).get("descricao", "")))
-        self.clientes = cadastros.listar(app.conn, "clientes")
-        self.atividades = cadastros.listar(app.conn, "atividades")
+        self.clientes = self._itens("clientes", (entrada or {}).get("cliente_id"))
+        self.atividades = self._itens("atividades", (entrada or {}).get("atividade_id"))
         self.cli = self._combo("Cliente", self.clientes, (entrada or {}).get("cliente_id"))
         self.ati = self._combo("Atividade", self.atividades, (entrada or {}).get("atividade_id"))
         if "cli_idx" in v:
@@ -76,6 +76,15 @@ class DialogoEntrada(Adw.AlertDialog):
         self.set_response_appearance("salvar", Adw.ResponseAppearance.SUGGESTED)
         self.set_default_response("salvar")
         self.connect("response", self._on_resp)
+
+    def _itens(self, tabela, id_da_entrada):
+        """Ativos, mais o arquivado da própria entrada (no fim), para Salvar não trocar o vínculo."""
+        itens = cadastros.listar(self.app.conn, tabela)
+        if id_da_entrada is not None and all(i["id"] != id_da_entrada for i in itens):
+            for i in cadastros.listar(self.app.conn, tabela, incluir_arquivados=True):
+                if i["id"] == id_da_entrada:
+                    itens.append(dict(i, nome=f"{i['nome']} (arquivado)"))
+        return itens
 
     def _combo(self, titulo, itens, selecionado):
         combo = Adw.ComboRow(title=titulo)

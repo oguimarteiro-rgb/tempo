@@ -58,7 +58,7 @@ class Janela(Adw.ApplicationWindow):
 
         def on_resp(_d, resp):
             if resp in esquecida.MODOS:
-                esquecida.resolver(self.app.conn, resp)
+                esquecida.resolver(self.app.conn, resp, id=e["id"])
                 self.app.servico.notificar()
                 self.atualizar()
         d.connect("response", on_resp)

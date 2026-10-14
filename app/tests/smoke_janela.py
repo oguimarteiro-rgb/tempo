@@ -7,6 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ["TEMPO_DIR"] = tempfile.mkdtemp(prefix="tempo-smoke-")
+os.environ["TEMPO_RUNTIME_DIR"] = os.environ["TEMPO_DIR"]  # não toca o tempo-sessao da sessão real
 
 import gi
 gi.require_version("Gtk", "4.0")
@@ -116,6 +117,40 @@ d4 = DialogoEntrada(jan, app, entradas.do_dia(c, t.date())[1], jan.atualizar)
 d4._on_resp(None, "apagar")
 assert len(linhas()) == 1
 
+# cliente arquivado da própria entrada: aparece no combo e Salvar mantém o vínculo
+cid2 = cadastros.criar(c, "clientes", "Antigo", "#33d17a")
+eid_arq = entradas.criar_manual(c, t.replace(hour=15), t.replace(hour=16), cid2, aid, "arquivada")
+cadastros.arquivar(c, "clientes", cid2)
+ent_arq = entradas.por_id(c, eid_arq)
+d6 = DialogoEntrada(jan, app, ent_arq, jan.atualizar)
+nomes = [d6.cli.get_model().get_string(i) for i in range(d6.cli.get_model().get_n_items())]
+assert nomes[-1] == "Antigo (arquivado)", nomes
+assert d6.clientes[d6.cli.get_selected()]["id"] == cid2
+d6.desc.set_text("só a descrição")
+d6._on_resp(None, "salvar")
+depois = entradas.por_id(c, eid_arq)
+assert depois["descricao"] == "só a descrição" and depois["cliente_id"] == cid2, depois
+# diálogo de entrada nova não oferece o arquivado
+d7 = DialogoEntrada(jan, app, None, jan.atualizar)
+assert all(i["id"] != cid2 for i in d7.clientes)
+entradas.apagar(c, eid_arq)
+
 # esquecida: sem entrada aberta, não abre diálogo
 jan.checar_esquecida()
+
+# esquecida: a resposta age só na entrada que foi perguntada (passa o id)
+import tempo.janela.janela as mod_janela
+from datetime import timedelta as _td
+chamadas = []
+real_resolver = mod_janela.esquecida.resolver
+mod_janela.esquecida.resolver = lambda conn, modo, agora=None, id=None: chamadas.append((modo, id))
+alertas = []
+Adw.AlertDialog.present = lambda self, pai=None: alertas.append(self)
+velha = entradas.iniciar(c, cid, aid, "velha", agora=app.servico.inicio_sessao - _td(hours=3))
+jan.checar_esquecida()
+assert len(alertas) == 1
+alertas[0].emit("response", "descartar")
+assert chamadas == [("descartar", velha)], chamadas
+mod_janela.esquecida.resolver = real_resolver
+entradas.apagar(c, velha)
 print("SMOKE OK")

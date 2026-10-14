@@ -7,6 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ["TEMPO_DIR"] = tempfile.mkdtemp(prefix="tempo-smoke-")
+os.environ["TEMPO_RUNTIME_DIR"] = os.environ["TEMPO_DIR"]  # não toca o tempo-sessao da sessão real
 
 import gi
 gi.require_version("Gtk", "4.0")
@@ -123,6 +124,12 @@ assert nomes == [f"tempo-{de}-{ate}.csv"], nomes
 assert destino.read_text() == exportar.csv_texto(atual), destino.read_text()
 assert len(destino.read_text().splitlines()) == 4  # cabeçalho + 3 entradas
 assert toasts == ["Exportado para saida.csv"], toasts
+# erro de escrita (pasta que não existe) vira toast, sem exceção
+destino = Path(tempfile.mkdtemp(prefix="tempo-csv-")) / "nao-existe" / "saida.csv"
+toasts.clear()
+pag._exportar()
+assert len(toasts) == 1 and toasts[0].startswith("Não foi possível exportar: "), toasts
+assert not destino.exists()
 print("SMOKE OK")
 
 # captura opcional: apresenta a janela e salva PNG da aba
