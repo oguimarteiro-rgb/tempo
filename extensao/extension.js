@@ -5,6 +5,7 @@ import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
+import Pango from 'gi://Pango';
 
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -28,6 +29,7 @@ const IFACE = `<node><interface name="br.com.oguim.Tempo.Servico">
 const Proxy = Gio.DBusProxy.makeProxyWrapper(IFACE);
 
 const LIMITE_AVISO_SEG = 12 * 3600;
+const MARGEM_CARTAO = 24;
 
 // Segundos decorridos desde o instante ISO 8601 informado (0 se invalido).
 function segundosDesde(iso) {
@@ -42,10 +44,133 @@ function fmtDuracao(seg) {
                  : `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
+function fmtRelogio(seg) {
+    const h = Math.floor(seg / 3600), m = Math.floor((seg % 3600) / 60), s = Math.floor(seg % 60);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+// Cartao flutuante com o cronometro: fica por cima de tudo, arrasta com o mouse e lembra a posicao.
+const Cartao = GObject.registerClass(
+class Cartao extends St.BoxLayout {
+    _init(settings, acoes) {
+        super._init({style_class: 'tempo-cartao', vertical: true, reactive: true, track_hover: true, visible: false});
+        this._settings = settings;
+        this._acoes = acoes;
+        this._arrasto = null;
+
+        const topo = new St.BoxLayout({x_expand: true});
+        this._legenda = new St.Label({style_class: 'tempo-cartao-legenda', x_expand: true, y_align: Clutter.ActorAlign.CENTER});
+        this._legenda.clutter_text.ellipsize = Pango.EllipsizeMode.END;
+        const fechar = new St.Button({style_class: 'tempo-cartao-fechar', can_focus: true,
+            child: new St.Icon({icon_name: 'window-close-symbolic', icon_size: 14})});
+        fechar.connect('clicked', () => this._acoes.fechar());
+        topo.add_child(this._legenda);
+        topo.add_child(fechar);
+
+        const base = new St.BoxLayout({x_expand: true});
+        this._relogio = new St.Label({style_class: 'tempo-cartao-relogio', x_expand: true, y_align: Clutter.ActorAlign.CENTER, text: '00:00:00'});
+        const parar = new St.Button({style_class: 'tempo-cartao-parar', label: 'Parar', can_focus: true, y_align: Clutter.ActorAlign.CENTER});
+        parar.connect('clicked', () => this._acoes.parar());
+        base.add_child(this._relogio);
+        base.add_child(parar);
+
+        this.add_child(topo);
+        this.add_child(base);
+
+        this.connect('button-press-event', (_a, ev) => this._pressionou(ev));
+        this.connect('motion-event', (_a, ev) => this._moveu(ev));
+        this.connect('button-release-event', () => this._soltou());
+        Main.layoutManager.addTopChrome(this, {trackFullscreen: false});
+    }
+
+    mostrar(entrada) {
+        const partes = [entrada.cliente || SEM_CLIENTE, entrada.atividade];
+        if (entrada.descricao) partes.push(entrada.descricao);
+        this._legenda.text = partes.join(' · ');
+        if (!this.visible) {
+            this.show();
+            this._posicionar();
+        }
+    }
+
+    esconder() {
+        this.hide();
+    }
+
+    atualizar(seg) {
+        this._relogio.text = fmtRelogio(seg);
+        if (seg >= LIMITE_AVISO_SEG) this._relogio.add_style_class_name('aviso');
+        else this._relogio.remove_style_class_name('aviso');
+    }
+
+    _monitor() {
+        return Main.layoutManager.primaryMonitor ?? {x: 0, y: 0, width: 1920, height: 1080};
+    }
+
+    _posicionar() {
+        const m = this._monitor();
+        const [, w] = this.get_preferred_width(-1);
+        const [, h] = this.get_preferred_height(w);
+        let x = this._settings.get_int('cartao-x');
+        let y = this._settings.get_int('cartao-y');
+        if (x < 0 || y < 0) {
+            x = m.x + m.width - w - MARGEM_CARTAO;
+            y = m.y + m.height - h - MARGEM_CARTAO * 4;  // acima da dock
+        }
+        this._mover(x, y, w, h);
+        console.log(`Tempo: cartão em ${this.x},${this.y} (${w}x${h})`);
+    }
+
+    // Mantem o cartao inteiro dentro do monitor principal.
+    _mover(x, y, w = this.width, h = this.height) {
+        const m = this._monitor();
+        x = Math.max(m.x, Math.min(x, m.x + m.width - w));
+        y = Math.max(m.y, Math.min(y, m.y + m.height - h));
+        this.set_position(Math.round(x), Math.round(y));
+    }
+
+    _sobreBotao(ator) {
+        for (let a = ator; a && a !== this; a = a.get_parent())
+            if (a instanceof St.Button) return true;
+        return false;
+    }
+
+    _pressionou(ev) {
+        if (ev.get_button() !== 1 || this._sobreBotao(ev.get_source())) return Clutter.EVENT_PROPAGATE;
+        const [x, y] = ev.get_coords();
+        this._arrasto = {dx: x - this.x, dy: y - this.y, moveu: false};
+        return Clutter.EVENT_STOP;
+    }
+
+    _moveu(ev) {
+        if (!this._arrasto) return Clutter.EVENT_PROPAGATE;
+        const [x, y] = ev.get_coords();
+        this._mover(x - this._arrasto.dx, y - this._arrasto.dy);
+        this._arrasto.moveu = true;
+        return Clutter.EVENT_STOP;
+    }
+
+    _soltou() {
+        if (!this._arrasto) return Clutter.EVENT_PROPAGATE;
+        if (this._arrasto.moveu) {
+            this._settings.set_int('cartao-x', this.x);
+            this._settings.set_int('cartao-y', this.y);
+        }
+        this._arrasto = null;
+        return Clutter.EVENT_STOP;
+    }
+
+    destroy() {
+        Main.layoutManager.removeChrome(this);
+        super.destroy();
+    }
+});
+
 const Indicador = GObject.registerClass(
 class Indicador extends PanelMenu.Button {
-    _init() {
+    _init(settings) {
         super._init(0.5, 'Tempo');
+        this._settings = settings;
         this._caixa = new St.BoxLayout({style_class: 'panel-status-menu-box'});
         this._ponto = new St.Label({text: '●', y_align: Clutter.ActorAlign.CENTER, visible: false});
         this._icone = new St.Icon({icon_name: 'alarm-symbolic', style_class: 'system-status-icon'});
@@ -67,10 +192,17 @@ class Indicador extends PanelMenu.Button {
         this._sinalId = 0;
         this._iniciado = false;
         this._geracao = 0;
+        this._ultimoId = null;
+        this._cartao = new Cartao(settings, {
+            parar: () => this._proxy?.PararRemote(() => {}),
+            fechar: () => this._cartaoVisivel(false),
+        });
 
         this._montarMenu();
         this._conectar();
         this.menu.connect('open-state-changed', (_m, aberto) => { if (aberto) this._recarregar(); });
+        // No desligamento do Shell os atores morrem por baixo, sem passar por destroy(): parar o tick aqui.
+        this.connect('destroy', () => { this._destruido = true; this._pararTick(); });
     }
 
     // Cria o proxy D-Bus. O sinal e conectado mesmo se o servico ainda nao estiver de pe.
@@ -127,6 +259,10 @@ class Indicador extends PanelMenu.Button {
         this.menu.addMenuItem(this._recentes);
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+        this._mostrarCartao = new PopupMenu.PopupMenuItem('Mostrar cartão');
+        this._mostrarCartao.connect('activate', () => this._cartaoVisivel(true));
+        this._mostrarCartao.visible = false;
+        this.menu.addMenuItem(this._mostrarCartao);
         const abrir = new PopupMenu.PopupMenuItem('Abrir relatório');
         abrir.connect('activate', () => this._proxy?.AbrirJanelaRemote(() => {}));
         this.menu.addMenuItem(abrir);
@@ -147,6 +283,35 @@ class Indicador extends PanelMenu.Button {
         this._ponto.visible = false;
         this._reconectar.visible = true;
         this._pararTick();
+        this._atualizarCartao();
+    }
+
+    _cartaoVisivel(sim) {
+        this._settings.set_boolean('cartao-visivel', sim);
+        this._atualizarCartao();
+    }
+
+    // O X esconde o cartao so ate a proxima tarefa: um Iniciar novo traz ele de volta.
+    _atualizarCartao() {
+        if (this._destruido) return;
+        if (!this._entrada) {
+            this._ultimoId = null;
+            this._cartao.esconder();
+            this._mostrarCartao.visible = false;
+            return;
+        }
+        if (this._entrada.id !== this._ultimoId) {
+            this._ultimoId = this._entrada.id;
+            this._settings.set_boolean('cartao-visivel', true);
+        }
+        const visivel = this._settings.get_boolean('cartao-visivel');
+        this._mostrarCartao.visible = !visivel;
+        if (visivel) {
+            this._cartao.mostrar(this._entrada);
+            this._cartao.atualizar(segundosDesde(this._entrada.inicio));
+        } else {
+            this._cartao.esconder();
+        }
     }
 
     _recarregar() {
@@ -281,6 +446,7 @@ class Indicador extends PanelMenu.Button {
             this._rotulo.text = '';
             this._pararTick();
         }
+        this._atualizarCartao();
         this._rotuloSub(this._subCli, 'cliente');
         this._rotuloSub(this._subAti, 'atividade');
         this._proxy?.RecentesRemote((r, e) => {
@@ -290,11 +456,12 @@ class Indicador extends PanelMenu.Button {
     }
 
     _atualizarRotulo() {
-        if (!this._entrada) return;
+        if (this._destruido || !this._entrada) return;
         const seg = segundosDesde(this._entrada.inicio);
         const aviso = seg >= LIMITE_AVISO_SEG ? ' ⚠' : '';
         // Sem cliente, mostra a atividade: curta e sempre presente (a descricao e livre e esticaria a barra)
         this._rotulo.text = `▶ ${fmtDuracao(seg)} · ${this._entrada.cliente || this._entrada.atividade}${aviso}`;
+        if (this._cartao.visible) this._cartao.atualizar(seg);
     }
 
     _iniciarTick() {
@@ -311,6 +478,8 @@ class Indicador extends PanelMenu.Button {
         this._pararTick();
         this._desconectarSinal();
         this._proxy = null;
+        this._cartao?.destroy();
+        this._cartao = null;
         super.destroy();
     }
 });
@@ -318,7 +487,7 @@ class Indicador extends PanelMenu.Button {
 export default class TempoExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
-        this._indicador = new Indicador();
+        this._indicador = new Indicador(this._settings);
         Main.panel.addToStatusArea('tempo', this._indicador, 1, 'right');
         Main.wm.addKeybinding('atalho-menu', this._settings, Meta.KeyBindingFlags.NONE,
             Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW, () => this._indicador.menu.toggle());

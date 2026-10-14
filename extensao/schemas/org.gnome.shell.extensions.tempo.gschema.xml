@@ -5,5 +5,17 @@
       <default>['&lt;Super&gt;t']</default>
       <summary>Atalho que abre o menu do Tempo</summary>
     </key>
+    <key name="cartao-visivel" type="b">
+      <default>true</default>
+      <summary>Cartão flutuante aparece enquanto uma tarefa roda</summary>
+    </key>
+    <key name="cartao-x" type="i">
+      <default>-1</default>
+      <summary>Posição X do cartão (-1 = canto inferior direito)</summary>
+    </key>
+    <key name="cartao-y" type="i">
+      <default>-1</default>
+      <summary>Posição Y do cartão (-1 = canto inferior direito)</summary>
+    </key>
   </schema>
 </schemalist>

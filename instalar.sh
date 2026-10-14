@@ -53,6 +53,11 @@ mkdir -p "$EXT_DIR"
 cp -r "$RAIZ/extensao/." "$EXT_DIR/"
 glib-compile-schemas "$EXT_DIR/schemas/"
 
+echo "-- fontes do cartão (SIL OFL, ver dados/fontes/LEIA-ME.md)"
+mkdir -p "$HOME/.local/share/fonts/tempo"
+cp "$RAIZ"/dados/fontes/*.woff2 "$HOME/.local/share/fonts/tempo/"
+fc-cache -f "$HOME/.local/share/fonts/tempo" >/dev/null 2>&1 || true
+
 if [ -z "${TEMPO_SEM_GNOME:-}" ]; then
   gnome-extensions enable "$EXT_UUID" 2>/dev/null || echo "   (ative a extensão após relogar: gnome-extensions enable $EXT_UUID)"
   update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true

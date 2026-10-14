@@ -15,6 +15,9 @@ verificação dela. Pré-requisito: `~/tempo/instalar.sh` já rodado e sessão r
 3. **Sem cliente cadastrado.** Com o banco sem clientes, abra o menu: o seletor Cliente mostra "Sem cliente". Clique em Iniciar e depois em Parar.
    - Esperado: o timer começa mesmo sem cliente, a barra mostra `▶ 00:0x · Edição` (a atividade no lugar do cliente), e ao parar a entrada aparece na aba Hoje como "Sem cliente · Edição".
 
+3a. **Cartão flutuante.** Com a tarefa do passo 3 rodando, olhe o canto inferior direito da tela.
+   - Esperado: um cartão escuro com borda amarela mostra `00:00:0x` em amarelo subindo a cada segundo e "Sem cliente · Edição" embaixo, por cima de qualquer janela. Arraste ele pelo fundo pra outro canto: ele fica onde você soltou (e lembra no próximo Iniciar). Clique no X: ele some e no menu da barra aparece "Mostrar cartão". Clique em "Mostrar cartão": ele volta. Clique em Parar no cartão: o timer para e o cartão some.
+
 3b. **Iniciar pela janela.** Abra o relatório (Abrir relatório ou comando `tempo`), aba Hoje. O cursor já deve estar na caixa "No que você está trabalhando?". Digite "teste pela janela" e aperte Enter.
    - Esperado: o cartão vira um cronômetro `00:00:0x` subindo a cada segundo, com "Sem cliente · Edição · teste pela janela" embaixo e o botão Parar. A barra de cima mostra o mesmo timer. Clique em Parar: a entrada desce pra lista do dia e o cursor volta pra caixa do nome. Com a caixa vazia o botão Iniciar fica desabilitado.
 

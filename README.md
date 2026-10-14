@@ -25,6 +25,9 @@ imprime o comando `dnf` para você rodar no Terminal de verdade e depois continu
 
 - O indicador fica na barra de cima: ícone de relógio parado, ou `▶ 00:42 · Cliente` rodando.
 - **Super+T** abre o menu do indicador.
+- Enquanto uma tarefa roda, um **cartão flutuante** no canto inferior direito mostra o
+  cronômetro por cima de tudo (cores e fontes do @oguim.criativo). Arrasta com o mouse,
+  tem Parar e um X que esconde até a próxima tarefa ("Mostrar cartão" no menu traz de volta).
 - No menu: **Iniciar / Parar**, **Trocar para …** (aparece enquanto roda), campo de
   descrição, seletores **Cliente** e **Atividade**, os 5 **Recentes** (um clique inicia)
   e **Abrir relatório**.
