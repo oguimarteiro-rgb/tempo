@@ -12,7 +12,10 @@ for f in \
   .local/share/dbus-1/services/br.com.oguim.Tempo.service \
   .config/autostart/br.com.oguim.Tempo.desktop \
   .local/share/gnome-shell/extensions/tempo@oguim.com/extension.js \
-  .local/share/gnome-shell/extensions/tempo@oguim.com/schemas/gschemas.compiled ; do
+  .local/share/gnome-shell/extensions/tempo@oguim.com/schemas/gschemas.compiled \
+  .config/systemd/user/tempo-resumo.service \
+  .config/systemd/user/tempo-resumo.timer \
+  .config/tempo/resumo.env ; do
   [ -e "$FAKE/$f" ] || { echo "FALTOU $f"; exit 1; }
 done
 grep -q "Exec=$FAKE/.local/bin/tempo --gapplication-service" "$FAKE/.local/share/dbus-1/services/br.com.oguim.Tempo.service"
@@ -38,6 +41,18 @@ chmod +x "$FAKE/stub/tempo"
 [ "$("$FAKE/stub/tempo" --gapplication-service)" = "py:-m tempo.app" ] || falha "filtro com o argumento sozinho"
 [ "$("$FAKE/stub/tempo" -x --gapplication-service -y)" = "py:-m tempo.app -x -y" ] || falha "filtro no meio"
 [ "$("$FAKE/stub/tempo" --outro)" = "py:-m tempo.app --outro" ] || falha "outros argumentos não passaram adiante"
+[ "$("$FAKE/stub/tempo" resumo)" = "py:-m tempo.resumo" ] || falha "tempo resumo não chamou o módulo"
+grep -q "ExecStart=$FAKE/.local/bin/tempo resumo-telegram" "$FAKE/.config/systemd/user/tempo-resumo.service" || falha "service sem ExecStart certo"
+grep -q "OnCalendar=Mon..Fri 18:00" "$FAKE/.config/systemd/user/tempo-resumo.timer" || falha "timer sem horário"
+# resumo-telegram: manda o texto pro comando configurado; sem texto não manda; sem comando sai limpo
+printf '#!/usr/bin/bash\necho "enviado:$1"\n' > "$FAKE/stub/enviar"; chmod +x "$FAKE/stub/enviar"
+printf 'ENVIAR_CMD="%s"\n' "$FAKE/stub/enviar" > "$FAKE/.config/tempo/resumo.env"
+printf '#!/usr/bin/bash\n[ "$2" = tempo.resumo ] && echo "Tempo de hoje: 1h"\n' > "$FAKE/stub/python3"
+[ "$(HOME="$FAKE" "$FAKE/stub/tempo" resumo-telegram)" = "enviado:Tempo de hoje: 1h" ] || falha "resumo-telegram não enviou o texto"
+printf '#!/usr/bin/bash\n:\n' > "$FAKE/stub/python3"
+[ -z "$(HOME="$FAKE" "$FAKE/stub/tempo" resumo-telegram)" ] || falha "resumo vazio mandou algo"
+rm "$FAKE/.config/tempo/resumo.env"
+HOME="$FAKE" "$FAKE/stub/tempo" resumo-telegram | grep -q "sem comando de envio" || falha "sem resumo.env não avisou"
 
 # autostart: liga o serviço no login, sem DBusActivatable
 A="$FAKE/.config/autostart/br.com.oguim.Tempo.desktop"

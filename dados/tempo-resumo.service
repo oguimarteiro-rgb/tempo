@@ -1,0 +1,6 @@
+[Unit]
+Description=Tempo: resumo do dia no Telegram
+
+[Service]
+Type=oneshot
+ExecStart=@BIN@ resumo-telegram

@@ -1,0 +1,9 @@
+[Unit]
+Description=Tempo: resumo do dia no Telegram às 18h, segunda a sexta
+
+[Timer]
+OnCalendar=Mon..Fri 18:00
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

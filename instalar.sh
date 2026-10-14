@@ -30,6 +30,23 @@ export PYTHONPATH="$DEST/app\${PYTHONPATH:+:\$PYTHONPATH}"
 if [ \$# -eq 0 ]; then
   exec /usr/bin/gapplication launch br.com.oguim.Tempo
 fi
+# "tempo resumo" imprime o resumo do dia; "tempo resumo-telegram" manda (timer das 18h).
+if [ "\$1" = "resumo" ]; then
+  exec /usr/bin/python3 -m tempo.resumo
+fi
+if [ "\$1" = "resumo-telegram" ]; then
+  ENVIAR_CMD=""
+  [ -f "\$HOME/.config/tempo/resumo.env" ] && . "\$HOME/.config/tempo/resumo.env"
+  [ -n "\$ENVIAR_CMD" ] && [ -x "\$ENVIAR_CMD" ] || { echo "sem comando de envio em ~/.config/tempo/resumo.env"; exit 0; }
+  texto=\$(/usr/bin/python3 -m tempo.resumo) || exit 1
+  [ -n "\$texto" ] || exit 0
+  # sem internet: tenta 3 vezes, 20 minutos entre uma e outra
+  for tentativa in 1 2 3; do
+    "\$ENVIAR_CMD" "\$texto" && exit 0
+    [ "\$tentativa" = 3 ] || sleep 1200
+  done
+  exit 1
+fi
 # O app já nasce como serviço (IS_SERVICE); o GLib não reconhece --gapplication-service nesse caso.
 args=()
 for a in "\$@"; do [ "\$a" = "--gapplication-service" ] || args+=("\$a"); done
@@ -52,6 +69,16 @@ rm -rf "$EXT_DIR"  # sem órfãos: arquivo removido da fonte não fica para trá
 mkdir -p "$EXT_DIR"
 cp -r "$RAIZ/extensao/." "$EXT_DIR/"
 glib-compile-schemas "$EXT_DIR/schemas/"
+
+echo "-- resumo do dia no Telegram (timer das 18h, segunda a sexta)"
+mkdir -p "$HOME/.config/tempo" "$HOME/.config/systemd/user"
+[ -f "$HOME/.config/tempo/resumo.env" ] || cp "$RAIZ/dados/resumo.env" "$HOME/.config/tempo/resumo.env"
+sed "s|@BIN@|$BIN|" "$RAIZ/dados/tempo-resumo.service" > "$HOME/.config/systemd/user/tempo-resumo.service"
+cp "$RAIZ/dados/tempo-resumo.timer" "$HOME/.config/systemd/user/tempo-resumo.timer"
+if [ -z "${TEMPO_SEM_GNOME:-}" ]; then
+  systemctl --user daemon-reload 2>/dev/null || true
+  systemctl --user enable --now tempo-resumo.timer 2>/dev/null || echo "   (ligue o timer depois: systemctl --user enable --now tempo-resumo.timer)"
+fi
 
 echo "-- fontes do cartão (SIL OFL, ver dados/fontes/LEIA-ME.md)"
 mkdir -p "$HOME/.local/share/fonts/tempo"

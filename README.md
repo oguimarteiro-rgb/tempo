@@ -38,6 +38,10 @@ imprime o comando `dnf` para você rodar no Terminal de verdade e depois continu
   - **Gargalos**: 3 gráficos de barras (cliente, atividade, dia da semana), leituras
     automáticas em texto e **Exportar CSV** do período.
   - **Cadastros**: clientes e atividades (adicionar, renomear, cor, arquivar).
+- **Resumo do dia no Telegram**: às 18h, de segunda a sexta, um timer do systemd roda
+  `tempo resumo-telegram` e manda o resumo (total, por cliente, por atividade, atividade
+  mais fragmentada, semana na sexta, tarefa ainda rodando). Só em dia com registro. O
+  comando de envio fica em `~/.config/tempo/resumo.env`. `tempo resumo` mostra o texto.
 - Teste da extensão sem relogar: `bash app/tests/teste_extensao_headless.sh` sobe um GNOME
   Shell sem janela num barramento e dconf próprios e confere o cartão no log (1 a 3 min).
 - O atalho é editável nas preferências da extensão, no formato `<Super>t`
