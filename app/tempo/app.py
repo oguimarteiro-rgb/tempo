@@ -43,11 +43,20 @@ class App(Adw.Application):
         return True
 
     def abrir_janela(self):
-        # Task 7 troca este corpo pela janela real
         GLib.idle_add(self.activate)
 
     def do_activate(self):
-        pass
+        from tempo.janela.janela import Janela
+        if self.janela is None:
+            self.janela = Janela(self)
+            self.janela.connect("close-request", self._fechou)
+        self.janela.present()
+        self.janela.atualizar()
+        self.janela.checar_esquecida()
+
+    def _fechou(self, *_):
+        self.janela = None
+        return False
 
 
 def main():
