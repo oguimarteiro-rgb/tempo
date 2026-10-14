@@ -1,0 +1,219 @@
+import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
+import GObject from 'gi://GObject';
+import Meta from 'gi://Meta';
+import Shell from 'gi://Shell';
+import St from 'gi://St';
+import Clutter from 'gi://Clutter';
+
+import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
+import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
+
+const NOME = 'br.com.oguim.Tempo';
+const CAMINHO = '/br/com/oguim/Tempo/Servico';
+const IFACE = `<node><interface name="br.com.oguim.Tempo.Servico">
+  <method name="Iniciar"><arg type="i" direction="in"/><arg type="i" direction="in"/><arg type="s" direction="in"/><arg type="i" direction="out"/></method>
+  <method name="Parar"><arg type="b" direction="out"/></method>
+  <method name="EntradaAtual"><arg type="s" direction="out"/></method>
+  <method name="Recentes"><arg type="s" direction="out"/></method>
+  <method name="Clientes"><arg type="s" direction="out"/></method>
+  <method name="Atividades"><arg type="s" direction="out"/></method>
+  <method name="AbrirJanela"/>
+  <method name="Versao"><arg type="s" direction="out"/></method>
+  <signal name="EntradaMudou"><arg type="s"/></signal>
+</interface></node>`;
+const Proxy = Gio.DBusProxy.makeProxyWrapper(IFACE);
+
+const LIMITE_AVISO_SEG = 12 * 3600;
+
+// Segundos decorridos desde o instante ISO 8601 informado (0 se invalido).
+function segundosDesde(iso) {
+    const ini = GLib.DateTime.new_from_iso8601(iso, null);
+    if (!ini) return 0;
+    return Math.max(0, GLib.DateTime.new_now_local().difference(ini) / 1e6);
+}
+
+function fmtDuracao(seg) {
+    const h = Math.floor(seg / 3600), m = Math.floor((seg % 3600) / 60), s = Math.floor(seg % 60);
+    return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+                 : `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+const Indicador = GObject.registerClass(
+class Indicador extends PanelMenu.Button {
+    _init() {
+        super._init(0.5, 'Tempo');
+        this._caixa = new St.BoxLayout({style_class: 'panel-status-menu-box'});
+        this._ponto = new St.Label({text: '●', y_align: Clutter.ActorAlign.CENTER, visible: false});
+        this._icone = new St.Icon({icon_name: 'alarm-symbolic', style_class: 'system-status-icon'});
+        this._rotulo = new St.Label({text: '', y_align: Clutter.ActorAlign.CENTER});
+        this._caixa.add_child(this._ponto);
+        this._caixa.add_child(this._icone);
+        this._caixa.add_child(this._rotulo);
+        this.add_child(this._caixa);
+
+        this._entrada = null;
+        this._clientes = [];
+        this._atividades = [];
+        this._clienteSel = null;
+        this._atividadeSel = null;
+        this._tick = 0;
+
+        this._montarMenu();
+        this._proxy = new Proxy(Gio.DBus.session, NOME, CAMINHO, (p, erro) => {
+            if (erro) { this._semServico(); return; }
+            this._sinalId = this._proxy.connectSignal('EntradaMudou', (_p, _s, [json]) => this._aplicar(json));
+            this._recarregar();
+        });
+        this.menu.connect('open-state-changed', (_m, aberto) => { if (aberto) this._recarregar(); });
+    }
+
+    _montarMenu() {
+        this._btn = new PopupMenu.PopupMenuItem('Iniciar');
+        this._btn.connect('activate', () => this._iniciarOuParar());
+        this.menu.addMenuItem(this._btn);
+
+        const campo = new PopupMenu.PopupBaseMenuItem({reactive: false, can_focus: false});
+        this._desc = new St.Entry({hint_text: 'Descrição (opcional)', x_expand: true, can_focus: true});
+        campo.add_child(this._desc);
+        this.menu.addMenuItem(campo);
+
+        this._subCli = new PopupMenu.PopupSubMenuMenuItem('Cliente');
+        this._subAti = new PopupMenu.PopupSubMenuMenuItem('Atividade');
+        this.menu.addMenuItem(this._subCli);
+        this.menu.addMenuItem(this._subAti);
+
+        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem('Recentes'));
+        this._recentes = new PopupMenu.PopupMenuSection();
+        this.menu.addMenuItem(this._recentes);
+
+        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+        const abrir = new PopupMenu.PopupMenuItem('Abrir relatório');
+        abrir.connect('activate', () => this._proxy?.AbrirJanelaRemote(() => {}));
+        this.menu.addMenuItem(abrir);
+        this._reconectar = new PopupMenu.PopupMenuItem('Reconectar ao serviço');
+        this._reconectar.connect('activate', () => this._recarregar());
+        this._reconectar.visible = false;
+        this.menu.addMenuItem(this._reconectar);
+    }
+
+    _semServico() {
+        this._icone.opacity = 120;
+        this._rotulo.text = '';
+        this._ponto.visible = false;
+        this._reconectar.visible = true;
+        this._pararTick();
+    }
+
+    _recarregar() {
+        if (!this._proxy) return;
+        this._proxy.EntradaAtualRemote((r, e) => {
+            if (e) { this._semServico(); return; }
+            this._icone.opacity = 255;
+            this._reconectar.visible = false;
+            this._aplicar(r[0]);
+        });
+        this._proxy.ClientesRemote((r, e) => { if (!e) { this._clientes = JSON.parse(r[0]); this._preencher(this._subCli, this._clientes, 'cliente'); } });
+        this._proxy.AtividadesRemote((r, e) => { if (!e) { this._atividades = JSON.parse(r[0]); this._preencher(this._subAti, this._atividades, 'atividade'); } });
+        this._proxy.RecentesRemote((r, e) => { if (!e) this._preencherRecentes(JSON.parse(r[0])); });
+    }
+
+    _preencher(sub, itens, tipo) {
+        sub.menu.removeAll();
+        const selId = tipo === 'cliente' ? this._clienteSel : this._atividadeSel;
+        const sel = itens.find(i => i.id === selId) ?? itens[0] ?? null;
+        if (tipo === 'cliente') this._clienteSel = sel?.id ?? null; else this._atividadeSel = sel?.id ?? null;
+        sub.label.text = `${tipo === 'cliente' ? 'Cliente' : 'Atividade'}: ${sel ? sel.nome : '(nenhum)'}`;
+        for (const it of itens) {
+            const item = new PopupMenu.PopupMenuItem(it.nome);
+            item.connect('activate', () => {
+                if (tipo === 'cliente') this._clienteSel = it.id; else this._atividadeSel = it.id;
+                sub.label.text = `${tipo === 'cliente' ? 'Cliente' : 'Atividade'}: ${it.nome}`;
+            });
+            sub.menu.addMenuItem(item);
+        }
+    }
+
+    _preencherRecentes(lista) {
+        this._recentes.removeAll();
+        for (const r of lista) {
+            const item = new PopupMenu.PopupMenuItem(`${r.cliente} · ${r.atividade}`);
+            item.connect('activate', () => this._proxy?.IniciarRemote(r.cliente_id, r.atividade_id, '', () => {}));
+            this._recentes.addMenuItem(item);
+        }
+    }
+
+    _iniciarOuParar() {
+        if (!this._proxy) return;
+        if (this._entrada) {
+            this._proxy.PararRemote(() => {});
+        } else if (this._clienteSel != null && this._atividadeSel != null) {
+            this._proxy.IniciarRemote(this._clienteSel, this._atividadeSel, this._desc.get_text(), () => { this._desc.set_text(''); });
+        } else {
+            Main.notify('Tempo', 'Cadastre um cliente e uma atividade no relatório antes de iniciar.');
+        }
+    }
+
+    _aplicar(json) {
+        this._entrada = json && json !== 'null' ? JSON.parse(json) : null;
+        if (this._entrada) {
+            this._clienteSel = this._entrada.cliente_id;
+            this._atividadeSel = this._entrada.atividade_id;
+            this._btn.label.text = 'Parar';
+            this._ponto.visible = true;
+            this._ponto.style = `color: ${this._entrada.cor}; margin-right: 4px;`;
+            this._icone.visible = false;
+            this._atualizarRotulo();
+            this._iniciarTick();
+        } else {
+            this._btn.label.text = 'Iniciar';
+            this._ponto.visible = false;
+            this._icone.visible = true;
+            this._rotulo.text = '';
+            this._pararTick();
+        }
+        this._proxy?.RecentesRemote((r, e) => { if (!e) this._preencherRecentes(JSON.parse(r[0])); });
+    }
+
+    _atualizarRotulo() {
+        if (!this._entrada) return;
+        const seg = segundosDesde(this._entrada.inicio);
+        const aviso = seg >= LIMITE_AVISO_SEG ? ' ⚠' : '';
+        this._rotulo.text = `▶ ${fmtDuracao(seg)} · ${this._entrada.cliente}${aviso}`;
+    }
+
+    _iniciarTick() {
+        this._pararTick();
+        this._tick = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, () => { this._atualizarRotulo(); return GLib.SOURCE_CONTINUE; });
+    }
+
+    _pararTick() {
+        if (this._tick) { GLib.source_remove(this._tick); this._tick = 0; }
+    }
+
+    destroy() {
+        this._pararTick();
+        if (this._proxy && this._sinalId) this._proxy.disconnectSignal(this._sinalId);
+        this._proxy = null;
+        super.destroy();
+    }
+});
+
+export default class TempoExtension extends Extension {
+    enable() {
+        this._settings = this.getSettings();
+        this._indicador = new Indicador();
+        Main.panel.addToStatusArea('tempo', this._indicador, 1, 'right');
+        Main.wm.addKeybinding('atalho-menu', this._settings, Meta.KeyBindingFlags.NONE,
+            Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW, () => this._indicador.menu.toggle());
+    }
+
+    disable() {
+        Main.wm.removeKeybinding('atalho-menu');
+        this._indicador?.destroy();
+        this._indicador = null;
+        this._settings = null;
+    }
+}

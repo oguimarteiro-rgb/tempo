@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.tempo" path="/org/gnome/shell/extensions/tempo/">
+    <key name="atalho-menu" type="as">
+      <default>['&lt;Super&gt;t']</default>
+      <summary>Atalho que abre o menu do Tempo</summary>
+    </key>
+  </schema>
+</schemalist>

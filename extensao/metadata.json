@@ -1,0 +1,9 @@
+{
+  "uuid": "tempo@oguim.com",
+  "name": "Tempo",
+  "description": "Timer de tarefas na barra. Conversa com o app Tempo por D-Bus.",
+  "shell-version": ["48", "49", "50", "51"],
+  "settings-schema": "org.gnome.shell.extensions.tempo",
+  "url": "https://github.com/oguimarteiro-rgb/tempo",
+  "version": 1
+}
