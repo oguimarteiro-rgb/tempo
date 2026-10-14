@@ -47,17 +47,24 @@ class PaginaHoje(Gtk.Box):
 
 
 class DialogoEntrada(Adw.AlertDialog):
-    def __init__(self, janela, app, entrada, depois):
+    def __init__(self, janela, app, entrada, depois, valores=None):
         super().__init__(heading="Editar entrada" if entrada else "Nova entrada")
         self.app, self.entrada, self.depois, self.janela = app, entrada, depois, janela
         grupo = Adw.PreferencesGroup()
-        self.desc = Adw.EntryRow(title="Descrição", text=(entrada or {}).get("descricao", ""))
+        v = valores or {}
+        self.desc = Adw.EntryRow(title="Descrição", text=v.get("descricao", (entrada or {}).get("descricao", "")))
         self.clientes = cadastros.listar(app.conn, "clientes")
         self.atividades = cadastros.listar(app.conn, "atividades")
         self.cli = self._combo("Cliente", self.clientes, (entrada or {}).get("cliente_id"))
         self.ati = self._combo("Atividade", self.atividades, (entrada or {}).get("atividade_id"))
-        self.ini = Adw.EntryRow(title="Início (HH:MM)", text=_hhmm((entrada or {}).get("inicio")) if entrada else "")
-        self.fim = Adw.EntryRow(title="Fim (HH:MM)", text=_hhmm((entrada or {}).get("fim")) if entrada and entrada.get("fim") else "")
+        if "cli_idx" in v:
+            self.cli.set_selected(v["cli_idx"])
+        if "ati_idx" in v:
+            self.ati.set_selected(v["ati_idx"])
+        ini_txt = _hhmm((entrada or {}).get("inicio")) if entrada else ""
+        fim_txt = _hhmm((entrada or {}).get("fim")) if entrada and entrada.get("fim") else ""
+        self.ini = Adw.EntryRow(title="Início (HH:MM)", text=v.get("inicio", ini_txt))
+        self.fim = Adw.EntryRow(title="Fim (HH:MM)", text=v.get("fim", fim_txt))
         for w in (self.desc, self.cli, self.ati, self.ini, self.fim):
             grupo.add(w)
         self.set_extra_child(grupo)
@@ -80,9 +87,12 @@ class DialogoEntrada(Adw.AlertDialog):
         return combo
 
     def _hora(self, texto, base_iso):
-        h, m = texto.strip().split(":")
-        dia = datetime.fromisoformat(base_iso).date() if base_iso else date.today()
-        return datetime.combine(dia, time(int(h), int(m))).astimezone()
+        try:
+            h, m = texto.strip().split(":")
+            dia = datetime.fromisoformat(base_iso).date() if base_iso else date.today()
+            return datetime.combine(dia, time(int(h), int(m))).astimezone()
+        except ValueError:
+            raise ValueError("horário inválido, use HH:MM") from None
 
     def _on_resp(self, _d, resp):
         try:
@@ -114,3 +124,8 @@ class DialogoEntrada(Adw.AlertDialog):
             self.depois()
         except (ValueError, IndexError) as e:
             self.janela.toast(f"Não salvou: {e}")
+            if resp == "salvar":
+                # o AlertDialog fecha sozinho; reabre com o que foi digitado
+                valores = dict(descricao=self.desc.get_text(), cli_idx=self.cli.get_selected(),
+                               ati_idx=self.ati.get_selected(), inicio=self.ini.get_text(), fim=self.fim.get_text())
+                DialogoEntrada(self.janela, self.app, self.entrada, self.depois, valores=valores).present(self.janela)

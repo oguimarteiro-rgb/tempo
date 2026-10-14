@@ -84,6 +84,27 @@ d2.fim.set_text("08:00")
 d2._on_resp(None, "salvar")
 assert entradas.do_dia(c, t.date())[0]["minutos"] == 180
 
+# falha de validação: toast em pt-BR e novo diálogo com o digitado preservado
+toasts, apresentados = [], []
+jan.toast = lambda texto: toasts.append(texto)
+DialogoEntrada.present = lambda self, pai=None: apresentados.append(self)
+for fim_ruim, trecho in (("08:00", "fim precisa ser depois do início"), ("25:99", "horário inválido, use HH:MM")):
+    toasts.clear(); apresentados.clear()
+    d5 = DialogoEntrada(jan, app, entradas.do_dia(c, t.date())[0], jan.atualizar)
+    d5.desc.set_text("texto digitado"); d5.ini.set_text("09:30"); d5.fim.set_text(fim_ruim)
+    d5._on_resp(None, "salvar")
+    assert toasts == [f"Não salvou: {trecho}"], toasts
+    assert len(apresentados) == 1 and apresentados[0] is not d5
+    n = apresentados[0]
+    assert (n.desc.get_text(), n.ini.get_text(), n.fim.get_text()) == ("texto digitado", "09:30", fim_ruim)
+    assert n.entrada is d5.entrada
+    assert entradas.do_dia(c, t.date())[0]["minutos"] == 180
+# cancelar não reabre
+apresentados.clear(); d5._on_resp(None, "cancelar"); assert not apresentados
+# texto malformado sem dois pontos
+toasts.clear(); d5.fim.set_text("abc"); d5._on_resp(None, "salvar")
+assert toasts == ["Não salvou: horário inválido, use HH:MM"], toasts
+
 # entrada manual
 d3 = DialogoEntrada(jan, app, None, jan.atualizar)
 d3.ini.set_text("13:00"); d3.fim.set_text("14:30"); d3.desc.set_text("manual")
