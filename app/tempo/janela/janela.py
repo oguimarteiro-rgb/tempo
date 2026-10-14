@@ -4,6 +4,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gtk
 
 from tempo import esquecida
+from tempo.janela.gargalos_view import PaginaGargalos
 from tempo.janela.hoje import PaginaHoje
 
 
@@ -14,7 +15,7 @@ class Janela(Adw.ApplicationWindow):
         self.stack = Adw.ViewStack()
         self.paginas = {}
         self._adicionar("hoje", "Hoje", "x-office-calendar-symbolic", PaginaHoje(app))
-        self._adicionar("gargalos", "Gargalos", "view-list-bullet-symbolic", self._placeholder("Gargalos"))
+        self._adicionar("gargalos", "Gargalos", "view-list-bullet-symbolic", PaginaGargalos(app))
         self._adicionar("cadastros", "Cadastros", "x-office-address-book-symbolic", self._placeholder("Cadastros"))
 
         switcher = Adw.ViewSwitcher(stack=self.stack, policy=Adw.ViewSwitcherPolicy.WIDE)
