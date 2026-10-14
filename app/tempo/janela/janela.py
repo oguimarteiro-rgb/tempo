@@ -4,6 +4,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gtk
 
 from tempo import esquecida
+from tempo.janela.cadastros_view import PaginaCadastros
 from tempo.janela.gargalos_view import PaginaGargalos
 from tempo.janela.hoje import PaginaHoje
 
@@ -16,7 +17,7 @@ class Janela(Adw.ApplicationWindow):
         self.paginas = {}
         self._adicionar("hoje", "Hoje", "x-office-calendar-symbolic", PaginaHoje(app))
         self._adicionar("gargalos", "Gargalos", "view-list-bullet-symbolic", PaginaGargalos(app))
-        self._adicionar("cadastros", "Cadastros", "x-office-address-book-symbolic", self._placeholder("Cadastros"))
+        self._adicionar("cadastros", "Cadastros", "x-office-address-book-symbolic", PaginaCadastros(app))
 
         switcher = Adw.ViewSwitcher(stack=self.stack, policy=Adw.ViewSwitcherPolicy.WIDE)
         header = Adw.HeaderBar(title_widget=switcher)
@@ -27,9 +28,6 @@ class Janela(Adw.ApplicationWindow):
         self.toasts.set_child(view)
         self.set_content(self.toasts)
         self.stack.connect("notify::visible-child", lambda *a: self.atualizar())
-
-    def _placeholder(self, titulo):
-        return Adw.StatusPage(title=titulo, description="Em construção")
 
     def _adicionar(self, nome, titulo, icone, widget):
         page = self.stack.add_titled(widget, nome, titulo)
