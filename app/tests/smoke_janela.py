@@ -94,27 +94,42 @@ d2.fim.set_text("08:00")
 d2._on_resp(None, "salvar")
 assert entradas.do_dia(c, t.date())[0]["minutos"] == 180
 
-# falha de validação: toast em pt-BR e novo diálogo com o digitado preservado
-toasts, apresentados = [], []
-jan.toast = lambda texto: toasts.append(texto)
+# falha de validação: o erro aparece dentro do diálogo, que continua aberto com o digitado; nada reabre
+apresentados, fechados = [], []
 DialogoEntrada.present = lambda self, pai=None: apresentados.append(self)
+DialogoEntrada.close = lambda self: fechados.append(self)
 for fim_ruim, trecho in (("08:00", "fim precisa ser depois do início"), ("25:99", "horário inválido, use HH:MM")):
-    toasts.clear(); apresentados.clear()
+    apresentados.clear(); fechados.clear()
     d5 = DialogoEntrada(jan, app, entradas.do_dia(c, t.date())[0], jan.atualizar)
     d5.desc.set_text("texto digitado"); d5.ini.set_text("09:30"); d5.fim.set_text(fim_ruim)
     d5._on_resp(None, "salvar")
-    assert toasts == [f"Não salvou: {trecho}"], toasts
-    assert len(apresentados) == 1 and apresentados[0] is not d5
-    n = apresentados[0]
-    assert (n.desc.get_text(), n.ini.get_text(), n.fim.get_text()) == ("texto digitado", "09:30", fim_ruim)
-    assert n.entrada is d5.entrada
+    assert d5.erro.get_visible() and d5.erro.get_text() == f"Não salvou: {trecho}", d5.erro.get_text()
+    assert not apresentados and not fechados
+    assert (d5.desc.get_text(), d5.ini.get_text(), d5.fim.get_text()) == ("texto digitado", "09:30", fim_ruim)
     assert entradas.do_dia(c, t.date())[0]["minutos"] == 180
-# cancelar não reabre
-apresentados.clear(); d5._on_resp(None, "cancelar"); assert not apresentados
 # texto malformado sem dois pontos
-toasts.clear(); d5.fim.set_text("abc"); d5._on_resp(None, "salvar")
-assert toasts == ["Não salvou: horário inválido, use HH:MM"], toasts
+d5.fim.set_text("abc"); d5._on_resp(None, "salvar")
+assert d5.erro.get_text() == "Não salvou: horário inválido, use HH:MM", d5.erro.get_text()
+# cancelar fecha sem salvar nem reabrir
+d5._on_resp(None, "cancelar"); assert fechados == [d5] and not apresentados
+assert entradas.do_dia(c, t.date())[0]["minutos"] == 180
+# salvar com sucesso fecha
+fechados.clear()
+d_ok = DialogoEntrada(jan, app, entradas.do_dia(c, t.date())[0], jan.atualizar)
+d_ok._on_resp(None, "salvar"); assert fechados == [d_ok]
 
+# entrada nova com horários vazios: inicia agora (foi o que o oguim esperava do botão +)
+d_ag = DialogoEntrada(jan, app, None, jan.atualizar)
+assert d_ag.btn_salvar.get_label() == "Iniciar agora"
+d_ag.ini.set_text("13:00"); assert d_ag.btn_salvar.get_label() == "Salvar"
+d_ag.ini.set_text(""); assert d_ag.btn_salvar.get_label() == "Iniciar agora"
+d_ag.desc.set_text("pelo mais"); d_ag._on_resp(None, "salvar"); bombear()
+assert entradas.atual(c)["descricao"] == "pelo mais" and pag.cartao.pilha.get_visible_child_name() == "rodando"
+entradas.parar(c); entradas.apagar(c, entradas.do_dia(c, t.date())[-1]["id"]); jan.atualizar()
+# só fim vazio continua sendo erro
+d_sf = DialogoEntrada(jan, app, None, jan.atualizar)
+d_sf.ini.set_text("13:00"); d_sf._on_resp(None, "salvar")
+assert d_sf.erro.get_text() == "Não salvou: entrada passada precisa de fim", d_sf.erro.get_text()
 # entrada manual
 d3 = DialogoEntrada(jan, app, None, jan.atualizar)
 d3.ini.set_text("13:00"); d3.fim.set_text("14:30"); d3.desc.set_text("manual")

@@ -181,9 +181,12 @@ class PaginaHoje(Gtk.Box):
         self.total.set_text(f"Total do dia: {gargalos.fmt_h(gargalos.total_minutos(lista))}")
 
 
-class DialogoEntrada(Adw.AlertDialog):
+class DialogoEntrada(Adw.Dialog):
+    """Editar ou lançar entrada. Fica aberto quando a validação falha, mostrando o erro dentro dele
+    (um AlertDialog fecha sozinho na resposta, e reabrir outro por cima empilhava diálogos)."""
+
     def __init__(self, janela, app, entrada, depois, valores=None):
-        super().__init__(heading="Editar entrada" if entrada else "Nova entrada")
+        super().__init__(title="Editar entrada" if entrada else "Nova entrada", content_width=440)
         self.app, self.entrada, self.depois, self.janela = app, entrada, depois, janela
         grupo = Adw.PreferencesGroup()
         v = valores or {}
@@ -202,15 +205,40 @@ class DialogoEntrada(Adw.AlertDialog):
         self.fim = Adw.EntryRow(title="Fim (HH:MM)", text=v.get("fim", fim_txt))
         for w in (self.desc, self.cli, self.ati, self.ini, self.fim):
             grupo.add(w)
-        self.set_extra_child(grupo)
-        self.add_response("cancelar", "Cancelar")
+        if not entrada:
+            grupo.set_description("Deixe Início e Fim vazios para iniciar agora.")
+
+        corpo = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12,
+                        margin_top=6, margin_bottom=12, margin_start=12, margin_end=12)
+        corpo.append(grupo)
+        self.erro = Gtk.Label(xalign=0, wrap=True, visible=False, css_classes=["error"])
+        corpo.append(self.erro)
+        botoes = Gtk.Box(spacing=6, halign=Gtk.Align.END)
+        cancelar = Gtk.Button(label="Cancelar")
+        cancelar.connect("clicked", lambda *_: self._on_resp(None, "cancelar"))
+        botoes.append(cancelar)
         if entrada:
-            self.add_response("apagar", "Apagar")
-            self.set_response_appearance("apagar", Adw.ResponseAppearance.DESTRUCTIVE)
-        self.add_response("salvar", "Salvar")
-        self.set_response_appearance("salvar", Adw.ResponseAppearance.SUGGESTED)
-        self.set_default_response("salvar")
-        self.connect("response", self._on_resp)
+            apagar = Gtk.Button(label="Apagar", css_classes=["destructive-action"])
+            apagar.connect("clicked", lambda *_: self._on_resp(None, "apagar"))
+            botoes.append(apagar)
+        salvar = Gtk.Button(label="Iniciar agora" if not entrada else "Salvar", css_classes=["suggested-action"])
+        salvar.connect("clicked", lambda *_: self._on_resp(None, "salvar"))
+        botoes.append(salvar)
+        self.btn_salvar = salvar
+        corpo.append(botoes)
+        if not entrada:
+            for w in (self.ini, self.fim):
+                w.connect("changed", lambda *_: self._rotulo_salvar())
+
+        view = Adw.ToolbarView()
+        view.add_top_bar(Adw.HeaderBar())
+        view.set_content(corpo)
+        self.set_child(view)
+        self.set_default_widget(salvar)  # Enter nos campos aciona Salvar
+
+    def _rotulo_salvar(self):
+        vazio = not self.ini.get_text().strip() and not self.fim.get_text().strip()
+        self.btn_salvar.set_label("Iniciar agora" if vazio else "Salvar")
 
     def _itens(self, tabela, id_da_entrada):
         """Ativos, mais o arquivado da própria entrada (no fim), para Salvar não trocar o vínculo."""
@@ -250,6 +278,12 @@ class DialogoEntrada(Adw.AlertDialog):
                 cid = self.clientes[self.cli.get_selected()]["id"]
                 aid = self.atividades[self.ati.get_selected()]["id"]
                 base = (self.entrada or {}).get("inicio")
+                if not self.entrada and not self.ini.get_text().strip() and not self.fim.get_text().strip():
+                    entradas.iniciar(self.app.conn, cid, aid, self.desc.get_text())
+                    self.app.servico.notificar()
+                    self.depois()
+                    self.close()
+                    return
                 ini = self._hora(self.ini.get_text(), base)
                 fim_txt = self.fim.get_text().strip()
                 fim = self._hora(fim_txt, base) if fim_txt else None
@@ -262,16 +296,14 @@ class DialogoEntrada(Adw.AlertDialog):
                     entradas.editar(self.app.conn, self.entrada["id"], **campos)
                 else:
                     if fim is None:
-                        raise ValueError("entrada manual precisa de fim")
+                        raise ValueError("entrada passada precisa de fim")
                     entradas.criar_manual(self.app.conn, ini, fim, cid, aid, self.desc.get_text())
             else:
+                self.close()
                 return
             self.app.servico.notificar()
             self.depois()
+            self.close()
         except (ValueError, IndexError) as e:
-            self.janela.toast(f"Não salvou: {e}")
-            if resp == "salvar":
-                # o AlertDialog fecha sozinho; reabre com o que foi digitado
-                valores = dict(descricao=self.desc.get_text(), cli_idx=self.cli.get_selected(),
-                               ati_idx=self.ati.get_selected(), inicio=self.ini.get_text(), fim=self.fim.get_text())
-                DialogoEntrada(self.janela, self.app, self.entrada, self.depois, valores=valores).present(self.janela)
+            self.erro.set_text(f"Não salvou: {e}")
+            self.erro.set_visible(True)
