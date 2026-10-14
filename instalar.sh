@@ -26,10 +26,15 @@ cp -r "$RAIZ/app/tempo" "$DEST/app/tempo"
 cat > "$BIN" <<EOF
 #!/usr/bin/bash
 export PYTHONPATH="$DEST/app\${PYTHONPATH:+:\$PYTHONPATH}"
+# Sem argumento (menu de aplicativos): pede ao serviço, pelo D-Bus, para abrir a janela.
+if [ \$# -eq 0 ]; then
+  exec /usr/bin/gapplication launch br.com.oguim.Tempo
+fi
 # O app já nasce como serviço (IS_SERVICE); o GLib não reconhece --gapplication-service nesse caso.
 args=()
 for a in "\$@"; do [ "\$a" = "--gapplication-service" ] || args+=("\$a"); done
-exec python3 -m tempo.app "\${args[@]}"
+# python do sistema fixo: um python3 de venv/pyenv no PATH não tem o PyGObject.
+exec /usr/bin/python3 -m tempo.app "\${args[@]}"
 EOF
 chmod +x "$BIN"
 
@@ -43,6 +48,7 @@ sed "s|@BIN@|$BIN|" "$RAIZ/dados/br.com.oguim.Tempo.service" > "$HOME/.local/sha
   > "$HOME/.config/autostart/br.com.oguim.Tempo.desktop"
 
 echo "-- extensão"
+rm -rf "$EXT_DIR"  # sem órfãos: arquivo removido da fonte não fica para trás
 mkdir -p "$EXT_DIR"
 cp -r "$RAIZ/extensao/." "$EXT_DIR/"
 glib-compile-schemas "$EXT_DIR/schemas/"
@@ -60,4 +66,11 @@ if [ -z "${TEMPO_SEM_GNOME:-}" ]; then
   echo "No Wayland a extensão só aparece depois de sair e entrar de novo na sessão."
 else
   echo "Tempo instalado (modo teste, sem GNOME)."
+fi
+
+# Reinstalar não troca um serviço que já está rodando: avisa, sem matar nada sozinho.
+# Padrão ancorado no início da linha de comando: sem âncora, o pgrep -f casa com qualquer
+# shell cujo comando contenha o texto "python3 -m tempo.app".
+if pids=$(pgrep -f '^(/usr/bin/)?python3 -m tempo\.app'); then
+  echo "Um Tempo já está rodando com o código antigo. Para usar a versão nova: saia e entre na sessão, ou rode: kill $(echo $pids)"
 fi
