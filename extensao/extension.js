@@ -217,6 +217,11 @@ class Indicador extends PanelMenu.Button {
         this._recentesLista = null;
         this._clientesSel = [];
         this._atividadesSel = [];
+        // Clientes vazios é uma escolha válida (sem cliente): o padrão dos recentes entra só uma vez,
+        // antes de o oguim mexer ou de chegar uma entrada. Depois disso, vazio fica vazio.
+        this._clientesDecididos = false;
+        // Itens dos submenus por tipo (id -> item), pra manter o check igual à seleção.
+        this._itensMenu = {cliente: new Map(), atividade: new Map()};
         this._tick = 0;
         this._proxy = null;
         this._sinalId = 0;
@@ -378,6 +383,9 @@ class Indicador extends PanelMenu.Button {
 
     _rotuloSub(sub, tipo) {
         sub.label.text = `${tipo === 'cliente' ? 'Cliente' : 'Atividade'}: ${this._rotuloSel(tipo)}`;
+        const ids = tipo === 'cliente' ? this._clientesSel : this._atividadesSel;
+        for (const [id, item] of this._itensMenu[tipo])
+            item.setOrnament(ids.includes(id) ? PopupMenu.Ornament.CHECK : PopupMenu.Ornament.NONE);
         this._atualizarTrocar();
     }
 
@@ -397,25 +405,36 @@ class Indicador extends PanelMenu.Button {
     _preencher(sub, itens, tipo) {
         if (this._destruido) return;
         sub.menu.removeAll();
+        this._itensMenu[tipo].clear();
         const validos = new Set(itens.map(i => i.id));
         let sel = (tipo === 'cliente' ? this._clientesSel : this._atividadesSel).filter(id => validos.has(id));
-        if (sel.length === 0 && this._recentesLista !== null) sel = this._padrao(tipo).filter(id => validos.has(id));
-        if (tipo === 'cliente') this._clientesSel = sel; else this._atividadesSel = sel;
-        this._rotuloSub(sub, tipo);
+        const podePadrao = tipo === 'atividade' || !this._clientesDecididos;
+        if (sel.length === 0 && podePadrao && this._recentesLista !== null) sel = this._padrao(tipo).filter(id => validos.has(id));
+        if (tipo === 'cliente') {
+            this._clientesSel = sel;
+            if (this._recentesLista !== null) this._clientesDecididos = true;
+        } else {
+            this._atividadesSel = sel;
+        }
         for (const it of itens) {
             const item = new ItemMarcavel(it.nome);
-            item.setOrnament(sel.includes(it.id) ? PopupMenu.Ornament.CHECK : PopupMenu.Ornament.NONE);
+            this._itensMenu[tipo].set(it.id, item);
             item.connect('marcou', () => {
                 const atual = tipo === 'cliente' ? this._clientesSel : this._atividadesSel;
                 // marca/desmarca; a ordem dos marcados segue a ordem da lista (o primeiro é o principal)
                 const novo = atual.includes(it.id) ? atual.filter(id => id !== it.id) : [...atual, it.id];
                 const ordenado = itens.map(i => i.id).filter(id => novo.includes(id));
-                if (tipo === 'cliente') this._clientesSel = ordenado; else this._atividadesSel = ordenado;
-                item.setOrnament(ordenado.includes(it.id) ? PopupMenu.Ornament.CHECK : PopupMenu.Ornament.NONE);
+                if (tipo === 'cliente') {
+                    this._clientesSel = ordenado;
+                    this._clientesDecididos = true;
+                } else {
+                    this._atividadesSel = ordenado;
+                }
                 this._rotuloSub(sub, tipo);
             });
             sub.menu.addMenuItem(item);
         }
+        this._rotuloSub(sub, tipo);
     }
 
     _preencherRecentes(lista) {
@@ -428,9 +447,11 @@ class Indicador extends PanelMenu.Button {
             this._recentes.addMenuItem(item);
         }
         if (this._atividadesSel.length === 0 && lista.length > 0) {
-            this._clientesSel = [...(lista[0].cliente_ids ?? [])];
+            // Não repõe clientes que o oguim já desmarcou de propósito.
+            if (!this._clientesDecididos) this._clientesSel = [...(lista[0].cliente_ids ?? [])];
             this._atividadesSel = [...(lista[0].atividade_ids ?? [])];
         }
+        this._clientesDecididos = true;
         // Último recurso: a primeira atividade da lista já carregada.
         if (this._atividadesSel.length === 0 && this._atividades[0]) this._atividadesSel = [this._atividades[0].id];
         this._rotuloSub(this._subCli, 'cliente');
@@ -464,6 +485,7 @@ class Indicador extends PanelMenu.Button {
         if (this._entrada) {
             this._clientesSel = [...(this._entrada.cliente_ids ?? [])];
             this._atividadesSel = [...(this._entrada.atividade_ids ?? [])];
+            this._clientesDecididos = true;
             this._btn.label.text = 'Parar';
             this._ponto.visible = true;
             this._ponto.style = `color: ${this._entrada.cor}; margin-right: 4px;`;
