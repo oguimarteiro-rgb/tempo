@@ -49,7 +49,7 @@ def test_esquecida(conn, sv):
 def test_abrir_janela_e_versao(sv):
     sv.chamar("AbrirJanela", ())
     assert sv.sinais[-1] == "janela"
-    assert sv.chamar("Versao", ()) == ("0.1.0",)
+    assert sv.chamar("Versao", ()) == ("0.2.0",)
 
 
 def test_metodo_desconhecido(sv):
@@ -81,7 +81,7 @@ finally:
 """
     out = subprocess.run(["dbus-run-session", "--", sys.executable, "-c", script],
                          capture_output=True, text=True, timeout=60)
-    assert "VERSAO 0.1.0" in out.stdout, out.stdout + out.stderr
+    assert "VERSAO 0.2.0" in out.stdout, out.stdout + out.stderr
     assert (tmp_path / "tempo.db").exists()
     # a sessão vai para o diretório de runtime, e o backup só sai depois de o banco abrir
     assert (tmp_path / "tempo-sessao").exists()
@@ -101,3 +101,20 @@ def test_notificar_avisa_a_janela(conn, sv):
     assert avisos == [1]
     # 0 vindo do D-Bus vira "sem cliente"
     assert json.loads(sv.chamar("EntradaAtual", ())[0])["cliente_id"] is None
+
+
+def test_iniciar_varios(conn, sv):
+    c1 = cadastros.criar(conn, "clientes", "Casttema")
+    c2 = cadastros.criar(conn, "clientes", "NP Hub")
+    ativ = [a["id"] for a in cadastros.listar(conn, "atividades")[:2]]
+    (eid,) = sv.chamar("IniciarVarios", ([c1, c2], ativ, "duas"))
+    e = json.loads(sv.chamar("EntradaAtual", ())[0])
+    assert e["id"] == eid and e["cliente_ids"] == [c1, c2] and e["atividade_ids"] == ativ
+    assert json.loads(sv.sinais[-1])["cliente_ids"] == [c1, c2]
+    rec = json.loads(sv.chamar("Recentes", ())[0])
+    assert rec[0]["cliente_ids"] == [c1, c2] and rec[0]["cliente"] == "Casttema + NP Hub"
+
+
+def test_iniciar_varios_sem_atividade_e_erro(conn, sv):
+    with pytest.raises(ValueError, match="escolha pelo menos uma atividade"):
+        sv.chamar("IniciarVarios", ([], [], ""))

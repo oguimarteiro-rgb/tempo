@@ -19,6 +19,12 @@ XML = f"""<node>
     <arg type="s" name="descricao" direction="in"/>
     <arg type="i" name="id" direction="out"/>
   </method>
+  <method name="IniciarVarios">
+    <arg type="ai" name="cliente_ids" direction="in"/>
+    <arg type="ai" name="atividade_ids" direction="in"/>
+    <arg type="s" name="descricao" direction="in"/>
+    <arg type="i" name="id" direction="out"/>
+  </method>
   <method name="Parar"><arg type="b" name="parou" direction="out"/></method>
   <method name="EntradaAtual"><arg type="s" name="json" direction="out"/></method>
   <method name="Recentes"><arg type="s" name="json" direction="out"/></method>
@@ -33,7 +39,7 @@ XML = f"""<node>
 </node>"""
 
 ASSINATURAS = {
-    "Iniciar": "(i)", "Parar": "(b)", "EntradaAtual": "(s)", "Recentes": "(s)", "Clientes": "(s)",
+    "Iniciar": "(i)", "IniciarVarios": "(i)", "Parar": "(b)", "EntradaAtual": "(s)", "Recentes": "(s)", "Clientes": "(s)",
     "Atividades": "(s)", "Esquecida": "(s)", "ResolverEsquecida": "()", "AbrirJanela": "()", "Versao": "(s)",
 }
 
@@ -55,6 +61,11 @@ class Servico:
         if nome == "Iniciar":
             cid, aid, desc = args
             eid = entradas.iniciar(self.conn, cid or None, aid, desc)  # 0 no D-Bus = sem cliente
+            self.notificar()
+            return (eid,)
+        if nome == "IniciarVarios":
+            cids, aids, desc = args
+            eid = entradas.iniciar(self.conn, list(cids), list(aids), desc)
             self.notificar()
             return (eid,)
         if nome == "Parar":

@@ -3,11 +3,21 @@ from tempo import gargalos
 
 TZ = timezone(timedelta(hours=-3))
 
-def e(dia, hora, minutos, cliente="Casttema", atividade="Edição", cor="#ff0000", cor_atividade="#3584e4"):
+def e(dia, hora, minutos, cliente="Casttema", atividade="Edição", cor="#ff0000", cor_atividade="#3584e4",
+      clientes=None, atividades=None):
+    """clientes/atividades: listas de nomes; se omitidas, vêm do cliente/atividade único (vazio = nenhum)."""
     ini = datetime(2026, 10, dia, hora, 0, tzinfo=TZ)
+    if clientes is None:
+        clientes = [cliente] if cliente else []
+    if atividades is None:
+        atividades = [atividade] if atividade else []
     return {"id": 0, "inicio": ini.isoformat(), "fim": (ini + timedelta(minutes=minutos)).isoformat(),
-            "cliente_id": 1, "atividade_id": 1, "descricao": "", "cliente": cliente,
-            "atividade": atividade, "cor": cor, "cor_atividade": cor_atividade, "minutos": minutos}
+            "cliente_id": 1, "atividade_id": 1, "descricao": "", "cliente": clientes[0] if clientes else "",
+            "atividade": atividades[0] if atividades else "", "cor": cor, "cor_atividade": cor_atividade,
+            "minutos": minutos,
+            "clientes": [{"id": i + 1, "nome": n, "cor": cor} for i, n in enumerate(clientes)],
+            "atividades": [{"id": i + 1, "nome": n, "cor": cor_atividade} for i, n in enumerate(atividades)],
+            "cliente_ids": list(range(1, len(clientes) + 1)), "atividade_ids": list(range(1, len(atividades) + 1))}
 
 def test_por_cliente_ordena_desc():
     r = gargalos.por_cliente([e(13, 9, 30, "A"), e(13, 10, 90, "B"), e(13, 12, 10, "A")])
@@ -69,3 +79,28 @@ def test_sem_cliente_tem_nome_proprio():
     lista = [e(1, 9, 60, cliente=""), e(1, 10, 30, cliente="")]
     assert gargalos.por_cliente(lista)[0][0] == "Sem cliente"
     assert gargalos.por_atividade([e(1, 9, 60, atividade="")])[0][0] == "Sem atividade"
+
+
+def test_cada_cliente_recebe_o_tempo_inteiro():
+    r = gargalos.por_cliente([e(13, 9, 60, clientes=["Pessoal", "NP Hub"]), e(13, 11, 30, clientes=["NP Hub"])])
+    assert r == [("NP Hub", 90, "#ff0000"), ("Pessoal", 60, "#ff0000")]
+
+
+def test_cada_atividade_recebe_o_tempo_inteiro():
+    r = gargalos.por_atividade([e(13, 9, 60, atividades=["Edição", "Roteiro"])])
+    assert [(n, m) for n, m, _ in r] == [("Edição", 60), ("Roteiro", 60)]
+
+
+def test_combinados_so_entradas_multiplas():
+    lista = [e(13, 9, 60, clientes=["Pessoal", "NP Hub"]), e(13, 10, 30, clientes=["Pessoal", "NP Hub"]),
+             e(13, 11, 20, atividades=["Edição", "Roteiro"]), e(13, 12, 45)]
+    r = gargalos.combinados(lista)
+    assert r == [("Pessoal + NP Hub · Edição", 90, "#ff0000"), ("Casttema · Edição + Roteiro", 20, "#ff0000")]
+    assert gargalos.combinados([e(13, 12, 45)]) == []
+
+
+def test_leitura_combinado():
+    lista = [e(13, 9, 60, clientes=["Pessoal", "NP Hub"]), e(13, 12, 45)]
+    frases = gargalos.leituras(lista, [])
+    assert "Combinado: Pessoal + NP Hub · Edição 1h" in frases
+    assert not any(f.startswith("Combinado") for f in gargalos.leituras([e(13, 12, 45)], []))

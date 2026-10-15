@@ -1,5 +1,6 @@
 from collections import Counter, defaultdict
 from datetime import date, timedelta, datetime
+from tempo.entradas import rotulo
 
 DIAS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
 DIAS_LONGO = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
@@ -23,22 +24,46 @@ def fmt_h(minutos):
 SEM = {"cliente": "Sem cliente", "atividade": "Sem atividade"}
 
 
-def _agrupar(entradas, chave, cor_de):
+def _itens(e, chave):
+    """[(nome, cor)] de cada cliente/atividade da entrada; sem nenhum, o nome 'Sem ...'."""
+    lista = e[chave + "s"]
+    if not lista:
+        return [(SEM[chave], e["cor"] if chave == "cliente" else e.get("cor_atividade", COR_PADRAO))]
+    return [(i["nome"], i["cor"]) for i in lista]
+
+
+def _agrupar(entradas, chave):
     mins = defaultdict(int)
     cores = {}
     for e in entradas:
-        k = e[chave] or SEM[chave]
-        mins[k] += e["minutos"]
-        cores.setdefault(k, cor_de(e))
+        for nome, cor in _itens(e, chave):
+            mins[nome] += e["minutos"]   # tempo inteiro pra cada item: decisão do spec
+            cores.setdefault(nome, cor)
     return sorted(((k, v, cores[k]) for k, v in mins.items()), key=lambda x: -x[1])
 
 
 def por_cliente(entradas):
-    return _agrupar(entradas, "cliente", lambda e: e["cor"])
+    return _agrupar(entradas, "cliente")
 
 
 def por_atividade(entradas):
-    return _agrupar(entradas, "atividade", lambda e: e.get("cor_atividade", COR_PADRAO))
+    return _agrupar(entradas, "atividade")
+
+
+def _multipla(e):
+    return len(e["clientes"]) > 1 or len(e["atividades"]) > 1
+
+
+def combinados(entradas):
+    """Tempo em modo múltiplo, agrupado pelo rótulo completo, só das entradas com mais de um item."""
+    mins, cores = defaultdict(int), {}
+    for e in entradas:
+        if not _multipla(e):
+            continue
+        k = rotulo(e)
+        mins[k] += e["minutos"]
+        cores.setdefault(k, e["cor"])
+    return sorted(((k, v, cores[k]) for k, v in mins.items()), key=lambda x: -x[1])
 
 
 def _dia_semana(e):
@@ -96,9 +121,16 @@ def _leitura_cliente(atual):
     if not clientes:
         return None
     nome, mins, _ = clientes[0]
-    do_cliente = [e for e in atual if (e["cliente"] or SEM["cliente"]) == nome]
+    do_cliente = [e for e in atual if nome in [n for n, _ in _itens(e, "cliente")]]
     atividade = por_atividade(do_cliente)[0][0]
     return f"{nome}: {fmt_h(mins)}, maior parte em {atividade}"
+
+
+def _leitura_combinado(atual):
+    grupos = combinados(atual)[:3]
+    if not grupos:
+        return None
+    return "Combinado: " + ", ".join(f"{nome} {fmt_h(mins)}" for nome, mins, _ in grupos)
 
 
 def _leitura_fragmentacao(atual):
@@ -123,6 +155,7 @@ def leituras(atual, anterior):
     frases = [
         _leitura_crescimento(atual, anterior),
         _leitura_cliente(atual),
+        _leitura_combinado(atual),
         _leitura_fragmentacao(atual),
         _leitura_total(atual),
     ]

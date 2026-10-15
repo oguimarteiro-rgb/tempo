@@ -78,10 +78,47 @@ s = sufixo(rs[0])
 assert "09:00–11:00" in s and "2h" in s, s
 assert pag.total.get_text() == "Total do dia: 2h", pag.total.get_text()
 
+# --- seletores múltiplos (cartão da aba Hoje) ---
+from tempo.janela.seletor import SeletorMultiplo
+nph = cadastros.criar(c, "clientes", "NP Hub", "#33d17a")
+rot = next(a["id"] for a in cadastros.listar(c, "atividades") if a["nome"] == "Roteiro")
+jan.atualizar()
+cart = pag.cartao
+assert isinstance(cart.cli, SeletorMultiplo) and isinstance(cart.ati, SeletorMultiplo)
+assert cart.cli.get_selecionados() == [cid], cart.cli.get_selecionados()   # segue a tarefa mais recente
+cart.cli.set_selecionados([cid, nph]); cart.ati.set_selecionados([aid, rot])
+assert cart.cli.get_label() == "Casttema +1" and cart.ati.get_label() == "Edição +1", (cart.cli.get_label(), cart.ati.get_label())
+cart.nome.set_text("duas coisas"); cart.iniciar(); bombear()
+e_multi = entradas.atual(c)
+assert e_multi["cliente_ids"] == [cid, nph] and e_multi["atividade_ids"] == [aid, rot], e_multi
+assert cart.legenda.get_text() == "Casttema + NP Hub · Edição + Roteiro · duas coisas", cart.legenda.get_text()
+entradas.parar(c)
+# começou e parou no mesmo minuto: o diálogo leria início == fim e barraria; horário fixo depois do reel 07
+entradas.editar(c, e_multi["id"], inicio=t.replace(hour=11), fim=t.replace(hour=11, minute=30))
+jan.atualizar()
+assert linhas()[-1].get_title() == "Casttema + NP Hub · Edição + Roteiro", linhas()[-1].get_title()
+# sem atividade marcada: Iniciar desabilita (com nome digitado, para o nome vazio não mascarar o teste)
+cart.nome.set_text("tem nome"); assert cart.btn_iniciar.get_sensitive()
+cart.ati.set_selecionados([])
+assert cart.ati.get_label() == "Atividade" and not cart.btn_iniciar.get_sensitive()
+cart.iniciar(); assert entradas.atual(c) is None  # Enter sem atividade não inicia
+cart.ati.set_selecionados([aid]); assert cart.btn_iniciar.get_sensitive()
+cart.nome.set_text("")
+# diálogo edita as listas
+d_m = DialogoEntrada(jan, app, entradas.do_dia(c, t.date())[-1], jan.atualizar)
+assert d_m.cli.get_selecionados() == [cid, nph]
+d_m.cli.set_selecionados([nph]); d_m.ati.set_selecionados([rot]); d_m._on_resp(None, "salvar")
+ult = entradas.do_dia(c, t.date())[-1]
+assert ult["cliente_ids"] == [nph] and ult["atividade_ids"] == [rot], ult
+d_v = DialogoEntrada(jan, app, ult, jan.atualizar)
+d_v.ati.set_selecionados([]); d_v._on_resp(None, "salvar")
+assert d_v.erro.get_text() == "Não salvou: escolha pelo menos uma atividade", d_v.erro.get_text()
+entradas.apagar(c, ult["id"]); jan.atualizar()
+
 ent = entradas.do_dia(c, t.date())[0]
 d = DialogoEntrada(jan, app, ent, jan.atualizar)
 assert d.ini.get_text() == "09:00" and d.fim.get_text() == "11:00"
-assert d.clientes[d.cli.get_selected()]["id"] == cid
+assert d.cli.get_selecionados() == [cid]
 d.fim.set_text("12:00")
 d._on_resp(None, "salvar")
 assert entradas.do_dia(c, t.date())[0]["minutos"] == 180
@@ -121,6 +158,8 @@ d_ok._on_resp(None, "salvar"); assert fechados == [d_ok]
 # entrada nova com horários vazios: inicia agora (foi o que o oguim esperava do botão +)
 d_ag = DialogoEntrada(jan, app, None, jan.atualizar)
 assert d_ag.btn_salvar.get_label() == "Iniciar agora"
+# entrada nova: nenhum cliente e a primeira atividade marcada (o que o combo antigo fazia)
+assert d_ag.cli.get_selecionados() == [] and d_ag.ati.get_selecionados() == [cadastros.listar(c, "atividades")[0]["id"]]
 d_ag.ini.set_text("13:00"); assert d_ag.btn_salvar.get_label() == "Salvar"
 d_ag.ini.set_text(""); assert d_ag.btn_salvar.get_label() == "Iniciar agora"
 d_ag.desc.set_text("pelo mais"); d_ag._on_resp(None, "salvar"); bombear()
@@ -147,13 +186,13 @@ eid_arq = entradas.criar_manual(c, t.replace(hour=15), t.replace(hour=16), cid2,
 cadastros.arquivar(c, "clientes", cid2)
 ent_arq = entradas.por_id(c, eid_arq)
 d6 = DialogoEntrada(jan, app, ent_arq, jan.atualizar)
-nomes = [d6.cli.get_model().get_string(i) for i in range(d6.cli.get_model().get_n_items())]
+nomes = [i["nome"] for i in d6.clientes]
 assert nomes[-1] == "Antigo (arquivado)", nomes
-assert d6.clientes[d6.cli.get_selected()]["id"] == cid2
+assert d6.cli.get_selecionados() == [cid2] and d6.cli.get_label() == "Antigo (arquivado)"
 d6.desc.set_text("só a descrição")
 d6._on_resp(None, "salvar")
 depois = entradas.por_id(c, eid_arq)
-assert depois["descricao"] == "só a descrição" and depois["cliente_id"] == cid2, depois
+assert depois["descricao"] == "só a descrição" and depois["cliente_ids"] == [cid2], depois
 # diálogo de entrada nova não oferece o arquivado
 d7 = DialogoEntrada(jan, app, None, jan.atualizar)
 assert all(i["id"] != cid2 for i in d7.clientes)
@@ -166,9 +205,9 @@ assert isinstance(cart, CartaoTimer)
 jan.atualizar()
 assert cart.pilha.get_visible_child_name() == "parado"
 # pré-seleção vem da última entrada (Casttema · Edição)
-assert cart._clientes[cart.cli.get_selected()]["id"] == cid
-assert cart._atividades[cart.ati.get_selected()]["id"] == aid
-assert cart._clientes[0]["nome"] == SEM_CLIENTE
+assert cart.cli.get_selecionados() == [cid]
+assert cart.ati.get_selecionados() == [aid]
+assert all(i["id"] is not None for i in cart._clientes)  # "Sem cliente" agora é nada marcado, não um item
 # iniciar só com o nome: hora de início é agora, cronômetro aparece, barra é avisada
 avisos.clear()
 cart.nome.set_text("")
@@ -194,7 +233,8 @@ assert cart.pilha.get_visible_child_name() == "parado" and cart._tick is None
 assert entradas.atual(c) is None
 assert any(r.get_subtitle() == "roteiro do reel" for r in linhas())
 # iniciar sem cliente: lista mostra "Sem cliente"
-cart.cli.set_selected(0)
+cart.cli.set_selecionados([])
+assert cart.cli.get_label() == SEM_CLIENTE
 cart.nome.set_text("reunião")
 cart.iniciar(); bombear()
 assert entradas.atual(c)["cliente_id"] is None
@@ -210,14 +250,14 @@ cart.parar(); bombear()
 # regressão: a barra roda outro cliente · atividade; ao parar, os seletores da janela seguem essa tarefa
 cid_h = cadastros.criar(c, "clientes", "Hornero", "#33d17a")
 aid_c = next(a["id"] for a in cadastros.listar(c, "atividades") if a["nome"] != "Edição")
-cart.cli.set_selected(cart._clientes.index(next(i for i in cart._clientes if i["id"] == cid)))
+cart.cli.set_selecionados([cid])
 app.servico.chamar("Iniciar", (cid_h, aid_c, "pela barra 2")); bombear()
 app.servico.chamar("Parar", ()); bombear()
-assert cart._clientes[cart.cli.get_selected()]["id"] == cid_h, cart._clientes[cart.cli.get_selected()]
-assert cart._atividades[cart.ati.get_selected()]["id"] == aid_c
+assert cart.cli.get_selecionados() == [cid_h], cart.cli.get_selecionados()
+assert cart.ati.get_selecionados() == [aid_c]
 # parado → parado: o que o oguim escolheu nos seletores fica
-cart.cli.set_selected(0); jan.atualizar()
-assert cart._clientes[cart.cli.get_selected()]["id"] is None
+cart.cli.set_selecionados([]); jan.atualizar()
+assert cart.cli.get_selecionados() == []
 # a barra inicia com a aba Hoje escondida; ao voltar pra Hoje o cartão está rodando
 jan.stack.set_visible_child_name("gargalos")
 app.servico.chamar("Iniciar", (cid_h, aid_c, "escondida")); bombear()
@@ -225,12 +265,12 @@ jan.stack.set_visible_child_name("hoje")
 assert cart.pilha.get_visible_child_name() == "rodando" and cart.legenda.get_text() == "Hornero · " + next(a["nome"] for a in cart._atividades if a["id"] == aid_c) + " · escondida"
 cart.parar(); bombear()
 # barra inicia e para com a Hoje escondida: ao voltar, os seletores seguem a tarefa nova
-cart.cli.set_selected(0); cart.nome.set_text("digitando")
+cart.cli.set_selecionados([]); cart.nome.set_text("digitando")
 jan.stack.set_visible_child_name("gargalos")
 app.servico.chamar("Iniciar", (cid_h, aid_c, "escondida 2")); bombear()
 app.servico.chamar("Parar", ()); bombear()
 jan.stack.set_visible_child_name("hoje")
-assert cart._clientes[cart.cli.get_selected()]["id"] == cid_h
+assert cart.cli.get_selecionados() == [cid_h]
 assert cart.nome.get_text() == "digitando"  # redesenho não mexe no que foi digitado
 cart.nome.set_text("")
 # aba Cadastros visível: mudança de entrada não reconstrói a lista
@@ -241,7 +281,7 @@ jan.stack.set_visible_child_name("hoje")
 # editar entrada sem cliente: diálogo abre em "Sem cliente" e salvar mantém
 ent_sc = next(e for e in entradas.do_dia(c, t.date()) if e["descricao"] == "reunião")
 d8 = DialogoEntrada(jan, app, ent_sc, jan.atualizar)
-assert d8.clientes[d8.cli.get_selected()]["id"] is None
+assert d8.cli.get_selecionados() == [] and d8.cli.get_label() == SEM_CLIENTE
 d8._on_resp(None, "salvar")
 assert entradas.por_id(c, ent_sc["id"])["cliente_id"] is None
 for e in entradas.do_dia(c, t.date()):

@@ -23,6 +23,18 @@ create table if not exists entradas(
 );
 create unique index if not exists uma_aberta on entradas((fim is null)) where fim is null;
 create index if not exists entradas_inicio on entradas(inicio);
+create table if not exists entrada_clientes(
+  entrada_id integer not null references entradas(id) on delete cascade,
+  cliente_id integer not null references clientes(id),
+  ordem integer not null default 0,
+  primary key(entrada_id, cliente_id)
+);
+create table if not exists entrada_atividades(
+  entrada_id integer not null references entradas(id) on delete cascade,
+  atividade_id integer not null references atividades(id),
+  ordem integer not null default 0,
+  primary key(entrada_id, atividade_id)
+);
 """
 
 ATIVIDADES_PADRAO = [
@@ -37,6 +49,12 @@ def abrir(caminho=":memory:"):
     conn.row_factory = sqlite3.Row
     conn.execute("pragma foreign_keys = on")
     conn.executescript(SCHEMA)
+    # Banco de antes das listas: cada entrada vira vínculo único a partir das colunas (idempotente).
+    conn.execute("insert or ignore into entrada_clientes(entrada_id, cliente_id, ordem) "
+                 "select id, cliente_id, 0 from entradas where cliente_id is not null")
+    conn.execute("insert or ignore into entrada_atividades(entrada_id, atividade_id, ordem) "
+                 "select id, atividade_id, 0 from entradas where atividade_id is not null")
+    conn.commit()
     if conn.execute("select count(*) from atividades").fetchone()[0] == 0:
         conn.executemany("insert into atividades(nome, cor) values(?, ?)", ATIVIDADES_PADRAO)
         conn.commit()

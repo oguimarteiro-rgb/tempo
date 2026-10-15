@@ -17,6 +17,7 @@ const SEM_CLIENTE = 'Sem cliente';
 const CAMINHO = '/br/com/oguim/Tempo/Servico';
 const IFACE = `<node><interface name="br.com.oguim.Tempo.Servico">
   <method name="Iniciar"><arg type="i" direction="in"/><arg type="i" direction="in"/><arg type="s" direction="in"/><arg type="i" direction="out"/></method>
+  <method name="IniciarVarios"><arg type="ai" direction="in"/><arg type="ai" direction="in"/><arg type="s" direction="in"/><arg type="i" direction="out"/></method>
   <method name="Parar"><arg type="b" direction="out"/></method>
   <method name="EntradaAtual"><arg type="s" direction="out"/></method>
   <method name="Recentes"><arg type="s" direction="out"/></method>
@@ -48,6 +49,15 @@ function fmtRelogio(seg) {
     const h = Math.floor(seg / 3600), m = Math.floor((seg % 3600) / 60), s = Math.floor(seg % 60);
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
+
+// Item de submenu que marca/desmarca sem fechar o menu (o activate padrão fecharia a árvore inteira).
+const ItemMarcavel = GObject.registerClass({
+    Signals: {'marcou': {}},
+}, class ItemMarcavel extends PopupMenu.PopupMenuItem {
+    activate(_event) {
+        this.emit('marcou');
+    }
+});
 
 // Cartao flutuante com o cronometro: fica por cima de tudo, arrasta com o mouse e lembra a posicao.
 const Cartao = GObject.registerClass(
@@ -92,7 +102,10 @@ class Cartao extends St.BoxLayout {
     }
 
     mostrar(entrada) {
-        const partes = [entrada.cliente || SEM_CLIENTE, entrada.atividade];
+        const partes = [
+            entrada.clientes?.map(c => c.nome).join(' + ') || entrada.cliente || SEM_CLIENTE,
+            entrada.atividades?.map(a => a.nome).join(' + ') || entrada.atividade || '',
+        ];
         if (entrada.descricao) partes.push(entrada.descricao);
         this._legenda.text = partes.join(' · ');
         if (!this._mostrado) {
@@ -202,8 +215,13 @@ class Indicador extends PanelMenu.Button {
         this._clientes = [];
         this._atividades = [];
         this._recentesLista = null;
-        this._clienteSel = null;
-        this._atividadeSel = null;
+        this._clientesSel = [];
+        this._atividadesSel = [];
+        // Clientes vazios é uma escolha válida (sem cliente): o padrão dos recentes entra só uma vez,
+        // antes de o oguim mexer ou de chegar uma entrada. Depois disso, vazio fica vazio.
+        this._clientesDecididos = false;
+        // Itens dos submenus por tipo (id -> item), pra manter o check igual à seleção.
+        this._itensMenu = {cliente: new Map(), atividade: new Map()};
         this._tick = 0;
         this._proxy = null;
         this._sinalId = 0;
@@ -338,8 +356,8 @@ class Indicador extends PanelMenu.Button {
         });
         this._proxy.ClientesRemote((r, e) => {
             if (this._destruido || e) return;
-            // id 0 = sem cliente, o mesmo valor que o servico entende no Iniciar
-            this._clientes = [{id: 0, nome: SEM_CLIENTE}, ...JSON.parse(r[0])];
+            // Sem cliente agora é "nenhum cliente marcado", não um item da lista.
+            this._clientes = JSON.parse(r[0]);
             this._preencher(this._subCli, this._clientes, 'cliente');
         });
         this._proxy.AtividadesRemote((r, e) => {
@@ -354,47 +372,69 @@ class Indicador extends PanelMenu.Button {
         });
     }
 
-    // Nome do item selecionado (ou null se ainda nao ha lista ou selecao).
-    _nomeSel(tipo) {
+    // Rótulo curto da seleção: '(nenhuma)', 'Pessoal' ou 'Pessoal +1'. Sem cliente marcado: 'Sem cliente'.
+    _rotuloSel(tipo) {
         const itens = tipo === 'cliente' ? this._clientes : this._atividades;
-        const id = tipo === 'cliente' ? this._clienteSel : this._atividadeSel;
-        return itens.find(i => i.id === id)?.nome ?? null;
+        const ids = tipo === 'cliente' ? this._clientesSel : this._atividadesSel;
+        const nomes = itens.filter(i => ids.includes(i.id)).map(i => i.nome);
+        if (nomes.length === 0) return tipo === 'cliente' ? SEM_CLIENTE : '(nenhuma)';
+        return nomes.length === 1 ? nomes[0] : `${nomes[0]} +${nomes.length - 1}`;
     }
 
     _rotuloSub(sub, tipo) {
-        const nome = this._nomeSel(tipo);
-        sub.label.text = `${tipo === 'cliente' ? 'Cliente' : 'Atividade'}: ${nome ?? '(nenhum)'}`;
+        sub.label.text = `${tipo === 'cliente' ? 'Cliente' : 'Atividade'}: ${this._rotuloSel(tipo)}`;
+        const ids = tipo === 'cliente' ? this._clientesSel : this._atividadesSel;
+        for (const [id, item] of this._itensMenu[tipo])
+            item.setOrnament(ids.includes(id) ? PopupMenu.Ornament.CHECK : PopupMenu.Ornament.NONE);
         this._atualizarTrocar();
     }
 
     _atualizarTrocar() {
         this._trocar.visible = this._entrada != null;
-        this._trocar.label.text = `Trocar para ${this._nomeSel('cliente') ?? '(nenhum)'} · ${this._nomeSel('atividade') ?? '(nenhum)'}`;
+        this._trocar.label.text = `Trocar para ${this._rotuloSel('cliente')} · ${this._rotuloSel('atividade')}`;
     }
 
-    // Padrao quando nao ha selecao: o ultimo usado (recentes), senao o primeiro da lista.
-    _padrao(itens, tipo) {
-        if (this._recentesLista === null) return null;
-        const r = this._recentesLista[0];
-        const id = r ? (tipo === 'cliente' ? (r.cliente_id ?? 0) : r.atividade_id) : null;
-        return itens.find(i => i.id === id) ?? itens[0] ?? null;
+    // Padrão quando nada está marcado: a última combinação usada (recentes), senão a primeira atividade.
+    _padrao(tipo) {
+        const r = this._recentesLista?.[0];
+        if (r) return tipo === 'cliente' ? [...(r.cliente_ids ?? [])] : [...(r.atividade_ids ?? [])];
+        if (tipo === 'atividade' && this._atividades[0]) return [this._atividades[0].id];
+        return [];
     }
 
     _preencher(sub, itens, tipo) {
         if (this._destruido) return;
         sub.menu.removeAll();
-        const selId = tipo === 'cliente' ? this._clienteSel : this._atividadeSel;
-        const sel = itens.find(i => i.id === selId) ?? this._padrao(itens, tipo);
-        if (tipo === 'cliente') this._clienteSel = sel?.id ?? null; else this._atividadeSel = sel?.id ?? null;
-        this._rotuloSub(sub, tipo);
+        this._itensMenu[tipo].clear();
+        const validos = new Set(itens.map(i => i.id));
+        let sel = (tipo === 'cliente' ? this._clientesSel : this._atividadesSel).filter(id => validos.has(id));
+        const podePadrao = tipo === 'atividade' || !this._clientesDecididos;
+        if (sel.length === 0 && podePadrao && this._recentesLista !== null) sel = this._padrao(tipo).filter(id => validos.has(id));
+        if (tipo === 'cliente') {
+            this._clientesSel = sel;
+            if (this._recentesLista !== null) this._clientesDecididos = true;
+        } else {
+            this._atividadesSel = sel;
+        }
         for (const it of itens) {
-            const item = new PopupMenu.PopupMenuItem(it.nome);
-            item.connect('activate', () => {
-                if (tipo === 'cliente') this._clienteSel = it.id; else this._atividadeSel = it.id;
+            const item = new ItemMarcavel(it.nome);
+            this._itensMenu[tipo].set(it.id, item);
+            item.connect('marcou', () => {
+                const atual = tipo === 'cliente' ? this._clientesSel : this._atividadesSel;
+                // marca/desmarca; a ordem dos marcados segue a ordem da lista (o primeiro é o principal)
+                const novo = atual.includes(it.id) ? atual.filter(id => id !== it.id) : [...atual, it.id];
+                const ordenado = itens.map(i => i.id).filter(id => novo.includes(id));
+                if (tipo === 'cliente') {
+                    this._clientesSel = ordenado;
+                    this._clientesDecididos = true;
+                } else {
+                    this._atividadesSel = ordenado;
+                }
                 this._rotuloSub(sub, tipo);
             });
             sub.menu.addMenuItem(item);
         }
+        this._rotuloSub(sub, tipo);
     }
 
     _preencherRecentes(lista) {
@@ -403,16 +443,17 @@ class Indicador extends PanelMenu.Button {
         this._recentes.removeAll();
         for (const r of lista) {
             const item = new PopupMenu.PopupMenuItem(`${r.cliente || SEM_CLIENTE} · ${r.atividade}`);
-            item.connect('activate', () => this._proxy?.IniciarRemote(r.cliente_id ?? 0, r.atividade_id, '', () => {}));
+            item.connect('activate', () => this._proxy?.IniciarVariosRemote(r.cliente_ids ?? [], r.atividade_ids ?? [], '', () => {}));
             this._recentes.addMenuItem(item);
         }
-        if ((this._clienteSel == null || this._atividadeSel == null) && lista.length > 0) {
-            this._clienteSel = lista[0].cliente_id ?? 0;
-            this._atividadeSel = lista[0].atividade_id;
+        if (this._atividadesSel.length === 0 && lista.length > 0) {
+            // Não repõe clientes que o oguim já desmarcou de propósito.
+            if (!this._clientesDecididos) this._clientesSel = [...(lista[0].cliente_ids ?? [])];
+            this._atividadesSel = [...(lista[0].atividade_ids ?? [])];
         }
-        // Ultimo recurso: primeiro item de cada lista ja carregada.
-        if (this._clienteSel == null) this._clienteSel = this._clientes[0]?.id ?? null;
-        if (this._atividadeSel == null) this._atividadeSel = this._atividades[0]?.id ?? null;
+        this._clientesDecididos = true;
+        // Último recurso: a primeira atividade da lista já carregada.
+        if (this._atividadesSel.length === 0 && this._atividades[0]) this._atividadesSel = [this._atividades[0].id];
         this._rotuloSub(this._subCli, 'cliente');
         this._rotuloSub(this._subAti, 'atividade');
     }
@@ -421,19 +462,19 @@ class Indicador extends PanelMenu.Button {
         if (!this._proxy) return;
         if (this._entrada) {
             this._proxy.PararRemote(() => {});
-        } else if (this._atividadeSel != null) {
-            this._proxy.IniciarRemote(this._clienteSel ?? 0, this._atividadeSel, this._desc.get_text(), (_r, e) => {
-                if (!this._destruido && !e) this._desc.set_text('');
-            });
         } else {
-            Main.notify('Tempo', 'Cadastre pelo menos uma atividade no relatório antes de iniciar.');
+            this._trocarTarefa();
         }
     }
 
-    // Com um timer rodando, inicia a tarefa escolhida nos seletores (o servico fecha a anterior sem intervalo).
+    // Inicia a combinação marcada (com timer rodando, o serviço fecha a anterior sem intervalo).
     _trocarTarefa() {
-        if (!this._proxy || this._atividadeSel == null) return;
-        this._proxy.IniciarRemote(this._clienteSel ?? 0, this._atividadeSel, this._desc.get_text(), (_r, e) => {
+        if (!this._proxy) return;
+        if (this._atividadesSel.length === 0) {
+            Main.notify('Tempo', 'Marque pelo menos uma atividade antes de iniciar.');
+            return;
+        }
+        this._proxy.IniciarVariosRemote(this._clientesSel, this._atividadesSel, this._desc.get_text(), (_r, e) => {
             if (!this._destruido && !e) this._desc.set_text('');
         });
     }
@@ -442,8 +483,9 @@ class Indicador extends PanelMenu.Button {
         if (this._destruido) return;
         this._entrada = json && json !== 'null' ? JSON.parse(json) : null;
         if (this._entrada) {
-            this._clienteSel = this._entrada.cliente_id ?? 0;
-            this._atividadeSel = this._entrada.atividade_id;
+            this._clientesSel = [...(this._entrada.cliente_ids ?? [])];
+            this._atividadesSel = [...(this._entrada.atividade_ids ?? [])];
+            this._clientesDecididos = true;
             this._btn.label.text = 'Parar';
             this._ponto.visible = true;
             this._ponto.style = `color: ${this._entrada.cor}; margin-right: 4px;`;
@@ -470,8 +512,11 @@ class Indicador extends PanelMenu.Button {
         if (this._destruido || !this._entrada) return;
         const seg = segundosDesde(this._entrada.inicio);
         const aviso = seg >= LIMITE_AVISO_SEG ? ' ⚠' : '';
-        // Sem cliente, mostra a atividade: curta e sempre presente (a descricao e livre e esticaria a barra)
-        this._rotulo.text = `▶ ${fmtDuracao(seg)} · ${this._entrada.cliente || this._entrada.atividade}${aviso}`;
+        // Sem cliente, mostra a atividade: curta e sempre presente (a descricao e livre e esticaria a barra).
+        // Com vários, o primeiro marcado e quantos mais: 'Pessoal +1'.
+        const nomes = (this._entrada.clientes?.length ? this._entrada.clientes : this._entrada.atividades ?? []).map(i => i.nome);
+        const quem = nomes.length > 1 ? `${nomes[0]} +${nomes.length - 1}` : (nomes[0] ?? (this._entrada.cliente || this._entrada.atividade || ''));
+        this._rotulo.text = `▶ ${fmtDuracao(seg)} · ${quem}${aviso}`;
         if (this._cartao._mostrado) this._cartao.atualizar(seg);
     }
 

@@ -25,13 +25,22 @@ verificação dela. Pré-requisito: `~/tempo/instalar.sh` já rodado e sessão r
 4. **Cadastrar cliente.** No menu, clique em Abrir relatório, vá à aba Cadastros, crie o cliente "Casttema" e feche a janela.
    - Esperado: o cliente é salvo e a janela fecha sem erro.
 
-5. **Iniciar.** No menu, escolha Casttema em Cliente, Edição em Atividade, escreva a descrição "teste" e clique em Iniciar. Tire a captura de tela deste momento e salve como `docs/tela.png`.
+5. **Iniciar.** No menu, marque só Casttema em Cliente e só Edição em Atividade (desmarque o que sobrou da combinação anterior, senão a barra mostra "Pessoal +2" e não "Casttema"), escreva a descrição "teste" e clique em Iniciar. Tire a captura de tela deste momento e salve como `docs/tela.png`.
    - Esperado: o rótulo da barra mostra `▶ 00:0x · Casttema`, subindo a cada segundo, com o pontinho na cor do cliente. O botão do menu vira Parar e aparece o item "Trocar para …".
+
+5a. **Vários ao mesmo tempo.** Pare a tarefa do passo 5. No menu da barra, abra Cliente e marque dois
+    clientes (o menu deve continuar aberto). Se a combinação anterior continuar marcada, desmarque o
+    que não quer. Marque duas atividades e clique Iniciar.
+    - Esperado: a barra mostra `▶ 00:0x · Casttema +1`; na aba Hoje a linha mostra
+      "Casttema + Pessoal · Edição + Roteiro"; em Gargalos, "Combinado: ..." nas leituras e cada
+      cliente com o tempo inteiro. (Ajuste os nomes aos clientes que existirem.)
+    - Clique no botão de clientes do cartão da aba Hoje: abre a lista de caixas; desmarque tudo
+      e o rótulo volta a "Sem cliente".
 
 6. **Recentes.** Abra o menu.
    - Esperado: a lista Recentes mostra "Casttema · Edição".
 
-7. **Trocar.** Mude Cliente/Atividade no menu e clique em "Trocar para …" (ou inicie outra combinação pelo Recentes). Depois abra a aba Hoje.
+7. **Trocar.** Mude a marcação de Cliente/Atividade no menu (marque a nova e desmarque a anterior; a combinação antiga continua marcada se não for desmarcada) e clique em "Trocar para …" (ou inicie outra combinação pelo Recentes). Depois abra a aba Hoje.
    - Esperado: a entrada anterior encerra no mesmo segundo em que a nova começa (o fim da 1ª é igual ao início da 2ª, sem buraco nem sobreposição).
 
 8. **Abrir relatório com a janela já aberta.** Deixe a janela do relatório aberta, coloque outra janela por cima dela (o Terminal, por exemplo) e clique em Abrir relatório no menu.
