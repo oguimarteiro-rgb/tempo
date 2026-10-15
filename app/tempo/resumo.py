@@ -63,6 +63,9 @@ def texto(conn, hoje=None, agora=None):
         _lista(gargalos.por_cliente(dia)),
         _lista(gargalos.por_atividade(dia)),
     ]
+    comb = gargalos.combinados(dia)
+    if comb:
+        linhas.append("Combinado: " + ", ".join(f"{nome} {gargalos.fmt_h(mins)}" for nome, mins, _ in comb))
     frag = _fragmentado(dia)
     if frag:
         linhas.append(frag)
@@ -72,8 +75,7 @@ def texto(conn, hoje=None, agora=None):
         if semana:
             linhas.append(semana)
     if aberta:
-        linhas.append(f"Ainda rodando: {aberta['cliente'] or 'Sem cliente'} · {aberta['atividade'] or 'Sem atividade'} "
-                      f"desde {aberta['inicio'][11:16]} (não esquece de parar)")
+        linhas.append(f"Ainda rodando: {entradas.rotulo(aberta)} desde {aberta['inicio'][11:16]} (não esquece de parar)")
     return "\n".join(linhas)
 
 

@@ -88,3 +88,16 @@ def test_main_nao_depende_de_gtk(tmp_path, monkeypatch):
     r = subprocess.run([sys.executable, "-c", "import sys, tempo.resumo; tempo.resumo.main(); print('gi' in sys.modules)"],
                        env=env, capture_output=True, text=True)
     assert r.returncode == 0 and r.stdout.strip().endswith("False"), r.stdout + r.stderr
+
+
+def test_resumo_mostra_combinado_e_rotulo_completo(conn):
+    c1, c2, ativ = _ids(conn)
+    entradas.criar_manual(conn, t(QUA, 9), t(QUA, 10), [c1, c2], ativ["Edição"], "dois")
+    entradas.criar_manual(conn, t(QUA, 10), t(QUA, 11), c1, ativ["Reunião"], "um")
+    entradas.iniciar(conn, [c1, c2], [ativ["Edição"], ativ["Roteiro"]], "aberta", agora=t(QUA, 17, 30))
+    txt = resumo.texto(conn, QUA, agora=t(QUA, 18))
+    linhas = txt.splitlines()
+    assert linhas[0] == "Tempo de hoje (qua 14/10): 2h30"
+    assert "Casttema 2h30 · Hornero 1h30" == linhas[1]
+    assert "Combinado: Casttema + Hornero · Edição 1h, Casttema + Hornero · Edição + Roteiro 30min" in linhas
+    assert linhas[-1].startswith("Ainda rodando: Casttema + Hornero · Edição + Roteiro desde 17:30")
