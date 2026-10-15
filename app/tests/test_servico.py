@@ -49,7 +49,7 @@ def test_esquecida(conn, sv):
 def test_abrir_janela_e_versao(sv):
     sv.chamar("AbrirJanela", ())
     assert sv.sinais[-1] == "janela"
-    assert sv.chamar("Versao", ()) == ("0.1.0",)
+    assert sv.chamar("Versao", ()) == ("0.2.0",)
 
 
 def test_metodo_desconhecido(sv):
@@ -81,7 +81,7 @@ finally:
 """
     out = subprocess.run(["dbus-run-session", "--", sys.executable, "-c", script],
                          capture_output=True, text=True, timeout=60)
-    assert "VERSAO 0.1.0" in out.stdout, out.stdout + out.stderr
+    assert "VERSAO 0.2.0" in out.stdout, out.stdout + out.stderr
     assert (tmp_path / "tempo.db").exists()
     # a sessão vai para o diretório de runtime, e o backup só sai depois de o banco abrir
     assert (tmp_path / "tempo-sessao").exists()

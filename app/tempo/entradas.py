@@ -128,10 +128,10 @@ def iniciar(conn, clientes, atividades, descricao="", agora=None):
     cliente_ids, atividade_ids = _ids(clientes), _ids(atividades)
     _exigir_atividade(atividade_ids)
     agora = agora or agora_local()
-    parar(conn, agora)
-    cur = conn.execute("insert into entradas(inicio, descricao) values(?,?)", (fmt(agora), descricao.strip()))
-    _gravar_vinculos(conn, cur.lastrowid, cliente_ids, atividade_ids)
-    conn.commit()
+    with conn:  # tudo ou nada: falha de FK desfaz inclusive o encerramento da anterior
+        conn.execute("update entradas set fim = ? where fim is null", (fmt(agora),))
+        cur = conn.execute("insert into entradas(inicio, descricao) values(?,?)", (fmt(agora), descricao.strip()))
+        _gravar_vinculos(conn, cur.lastrowid, cliente_ids, atividade_ids)
     return cur.lastrowid
 
 
@@ -147,10 +147,10 @@ def criar_manual(conn, inicio, fim, clientes, atividades, descricao=""):
     _exigir_atividade(atividade_ids)
     if parse(fmt(fim)) <= parse(fmt(inicio)):
         raise ValueError("fim precisa ser depois do início")
-    cur = conn.execute("insert into entradas(inicio, fim, descricao) values(?,?,?)",
-                       (fmt(inicio), fmt(fim), descricao.strip()))
-    _gravar_vinculos(conn, cur.lastrowid, cliente_ids, atividade_ids)
-    conn.commit()
+    with conn:
+        cur = conn.execute("insert into entradas(inicio, fim, descricao) values(?,?,?)",
+                           (fmt(inicio), fmt(fim), descricao.strip()))
+        _gravar_vinculos(conn, cur.lastrowid, cliente_ids, atividade_ids)
     return cur.lastrowid
 
 
@@ -169,13 +169,13 @@ def editar(conn, id, **campos):
     atividade_ids = _ids(campos.pop("atividade_id")) if "atividade_id" in campos else atual_e["atividade_ids"]
     if "atividade_id" in campos_originais:
         _exigir_atividade(atividade_ids)
-    if campos:
-        valores = {k: (fmt(v) if k in ("inicio", "fim") and v is not None else v) for k, v in campos.items()}
-        sets = ", ".join(f"{k} = ?" for k in valores)
-        conn.execute(f"update entradas set {sets} where id = ?", (*valores.values(), id))
-    if mexe_vinculos:
-        _gravar_vinculos(conn, id, cliente_ids, atividade_ids)
-    conn.commit()
+    with conn:
+        if campos:
+            valores = {k: (fmt(v) if k in ("inicio", "fim") and v is not None else v) for k, v in campos.items()}
+            sets = ", ".join(f"{k} = ?" for k in valores)
+            conn.execute(f"update entradas set {sets} where id = ?", (*valores.values(), id))
+        if mexe_vinculos:
+            _gravar_vinculos(conn, id, cliente_ids, atividade_ids)
 
 
 def apagar(conn, id):
@@ -213,6 +213,8 @@ def recentes(conn, n=5, amostra=60):
     arquivados_a = {r["id"] for r in conn.execute("select id from atividades where arquivado = 1")}
     vistas, saida = set(), []
     for e in _dicts(conn, rows):
+        if not e["atividade_ids"]:  # legado sem atividade: IniciarVarios([], []) falharia
+            continue
         chave = (tuple(e["cliente_ids"]), tuple(e["atividade_ids"]))
         if chave in vistas:
             continue

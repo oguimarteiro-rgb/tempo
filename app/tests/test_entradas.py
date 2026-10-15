@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone, date
+import sqlite3
 import pytest
 from tempo import entradas, cadastros
 
@@ -210,3 +211,49 @@ def test_editar_horario_e_descricao_em_entrada_legada_sem_vinculos(conn, ids):
     assert e["atividade_ids"] == [] and e["cliente_ids"] == []
     with pytest.raises(ValueError, match="escolha pelo menos uma atividade"):
         entradas.editar(conn, eid, atividade_id=[])
+
+
+def test_iniciar_com_id_invalido_desfaz_tudo(conn, ids):
+    c, a = ids
+    anterior = entradas.iniciar(conn, c, a, "antes", agora=T0)
+    with pytest.raises(sqlite3.IntegrityError):
+        entradas.iniciar(conn, [999], [a], agora=T0 + timedelta(hours=1))
+    assert conn.in_transaction is False
+    # a anterior continua rodando e nada meio gravado
+    assert entradas.atual(conn)["id"] == anterior
+    assert conn.execute("select count(*) from entradas").fetchone()[0] == 1
+
+
+def test_iniciar_invalido_sem_anterior_nao_deixa_entrada(conn, ids):
+    _, a = ids
+    with pytest.raises(sqlite3.IntegrityError):
+        entradas.iniciar(conn, [999], [a])
+    assert conn.in_transaction is False
+    assert entradas.atual(conn) is None
+
+
+def test_criar_manual_com_id_invalido_desfaz(conn, ids):
+    _, a = ids
+    with pytest.raises(sqlite3.IntegrityError):
+        entradas.criar_manual(conn, T0, T0 + timedelta(hours=1), [999], [a])
+    assert conn.in_transaction is False
+    assert conn.execute("select count(*) from entradas").fetchone()[0] == 0
+
+
+def test_editar_com_id_invalido_mantem_vinculos(conn, ids):
+    c, a = ids
+    eid = entradas.criar_manual(conn, T0, T0 + timedelta(hours=1), [c], [a], "x")
+    with pytest.raises(sqlite3.IntegrityError):
+        entradas.editar(conn, eid, cliente_id=[999], descricao="novo")
+    assert conn.in_transaction is False
+    e = entradas.por_id(conn, eid)
+    assert e["cliente_ids"] == [c] and e["atividade_ids"] == [a]
+    assert e["descricao"] == "x"
+
+
+def test_recentes_pula_entrada_sem_atividade(conn, ids):
+    c, _ = ids
+    conn.execute("insert into entradas(inicio, fim, descricao, cliente_id) values(?,?,?,?)",
+                 (entradas.fmt(T0), entradas.fmt(T0 + timedelta(hours=1)), "legado", c))
+    conn.commit()
+    assert entradas.recentes(conn) == []

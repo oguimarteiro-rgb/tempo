@@ -13,15 +13,20 @@ def _lista(grupos):
 
 
 def _fragmentado(dia):
-    """Atividade com mais blocos no dia, se teve pelo menos 2."""
-    blocos = Counter(e["atividade"] or "Sem atividade" for e in dia)
+    """Atividade com mais blocos no dia, se teve pelo menos 2. Conta por item, como gargalos._itens:
+    cada atividade da entrada ganha um bloco e os minutos inteiros."""
+    blocos, minutos = Counter(), Counter()
+    for e in dia:
+        nomes = [a["nome"] for a in e["atividades"]] or [e["atividade"] or "Sem atividade"]
+        for nome in nomes:
+            blocos[nome] += 1
+            minutos[nome] += e["minutos"]
     if not blocos:
         return None
     nome, n = blocos.most_common(1)[0]
     if n < 2:
         return None
-    mins = sum(e["minutos"] for e in dia if (e["atividade"] or "Sem atividade") == nome)
-    return f"Mais fragmentado: {nome}, {n} blocos ({gargalos.fmt_h(mins)})"
+    return f"Mais fragmentado: {nome}, {n} blocos ({gargalos.fmt_h(minutos[nome])})"
 
 
 def _semana(conn, hoje, aberta, agora):

@@ -103,7 +103,7 @@ class Cartao extends St.BoxLayout {
 
     mostrar(entrada) {
         const partes = [
-            entrada.clientes?.map(c => c.nome).join(' + ') || SEM_CLIENTE,
+            entrada.clientes?.map(c => c.nome).join(' + ') || entrada.cliente || SEM_CLIENTE,
             entrada.atividades?.map(a => a.nome).join(' + ') || entrada.atividade || '',
         ];
         if (entrada.descricao) partes.push(entrada.descricao);
