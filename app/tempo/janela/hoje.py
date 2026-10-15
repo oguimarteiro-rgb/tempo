@@ -6,6 +6,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk, Pango
 
 from tempo import cadastros, entradas, gargalos
+from tempo.janela.seletor import SeletorMultiplo
 
 
 SEM_CLIENTE = "Sem cliente"
@@ -13,10 +14,6 @@ SEM_CLIENTE = "Sem cliente"
 
 def _hhmm(iso):
     return iso[11:16] if iso else "…"
-
-
-def _nome_cliente(e):
-    return e["cliente"] or SEM_CLIENTE
 
 
 class CartaoTimer(Gtk.Box):
@@ -28,7 +25,7 @@ class CartaoTimer(Gtk.Box):
         self._tick = None
         self._inicio = None
         self._clientes, self._atividades = [], []
-        self._cid, self._aid = None, None  # seleção lembrada entre redesenhos
+        self._cids, self._aids = [], []  # seleção lembrada entre redesenhos
         self._marca = object()  # id da entrada mais recente vista na última carga dos seletores
         self._rodando = False
         self.pilha = Gtk.Stack(hexpand=True, margin_top=12, margin_bottom=12, margin_start=12, margin_end=12,
@@ -45,8 +42,9 @@ class CartaoTimer(Gtk.Box):
         linha.append(self.nome)
         linha.append(self.btn_iniciar)
         seletores = Gtk.Box(spacing=6)
-        self.cli = Gtk.DropDown(tooltip_text="Cliente")
-        self.ati = Gtk.DropDown(tooltip_text="Atividade")
+        self.cli = SeletorMultiplo(SEM_CLIENTE, tooltip_text="Clientes")
+        self.ati = SeletorMultiplo("Atividade", tooltip_text="Atividades")
+        self.ati.connect("mudou", lambda *_: self._habilitar())
         seletores.append(self.cli)
         seletores.append(self.ati)
         parado.append(linha)
@@ -72,7 +70,7 @@ class CartaoTimer(Gtk.Box):
         e = entradas.atual(self.app.conn)
         if e:
             self._inicio = e["inicio"]
-            partes = [_nome_cliente(e), e["atividade"]]
+            partes = [entradas.rotulo(e)]
             if e["descricao"]:
                 partes.append(e["descricao"])
             self.legenda.set_text(" · ".join(partes))
@@ -104,38 +102,33 @@ class CartaoTimer(Gtk.Box):
 
     def _carregar_opcoes(self):
         """Seleção: se rodou tarefa nova desde a última carga (por aqui, pela barra ou pelo diálogo), segue ela;
-        senão fica o que está nos seletores. Item lembrado que foi arquivado cai no primeiro da lista."""
+        senão fica o que está nos seletores. Item lembrado que foi arquivado some da marcação."""
         ultimo = entradas.recentes(self.app.conn, 1)
         marca = ultimo[0]["ultimo_id"] if ultimo else None
         if marca != self._marca:
             self._marca = marca
             if ultimo:
-                self._cid, self._aid = ultimo[0]["cliente_id"], ultimo[0]["atividade_id"]
-        elif self._clientes:
-            self._cid = self._clientes[self.cli.get_selected()]["id"]
-            self._aid = self._atividades[self.ati.get_selected()]["id"] if self._atividades else None
-        self._clientes = [{"id": None, "nome": SEM_CLIENTE}] + cadastros.listar(self.app.conn, "clientes")
+                self._cids, self._aids = ultimo[0]["cliente_ids"], ultimo[0]["atividade_ids"]
+        elif self._atividades:
+            self._cids, self._aids = self.cli.get_selecionados(), self.ati.get_selecionados()
+        self._clientes = cadastros.listar(self.app.conn, "clientes")
         self._atividades = cadastros.listar(self.app.conn, "atividades")
-        for combo, itens, sel in ((self.cli, self._clientes, self._cid), (self.ati, self._atividades, self._aid)):
-            combo.set_model(Gtk.StringList.new([i["nome"] for i in itens]))
-            for idx, i in enumerate(itens):
-                if i["id"] == sel:
-                    combo.set_selected(idx)
+        self.cli.set_itens(self._clientes, self._cids)
+        self.ati.set_itens(self._atividades, self._aids)
         self._habilitar()
 
     def _habilitar(self):
-        self.btn_iniciar.set_sensitive(bool(self._atividades) and bool(self.nome.get_text().strip()))
+        self.btn_iniciar.set_sensitive(bool(self.ati.get_selecionados()) and bool(self.nome.get_text().strip()))
 
     # --- ações ---
     def iniciar(self):
         if not self.nome.get_text().strip():
             return  # o nome é obrigatório; Enter vazio não faz nada
-        if not self._atividades:
-            self.get_root().toast("Cadastre pelo menos uma atividade antes de iniciar")
+        aids = self.ati.get_selecionados()
+        if not aids:
+            self.get_root().toast("Marque pelo menos uma atividade antes de iniciar")
             return
-        cid = self._clientes[self.cli.get_selected()]["id"]
-        aid = self._atividades[self.ati.get_selected()]["id"]
-        entradas.iniciar(self.app.conn, cid, aid, self.nome.get_text())
+        entradas.iniciar(self.app.conn, self.cli.get_selecionados(), aids, self.nome.get_text())
         self.nome.set_text("")
         self.app.servico.notificar()  # avisa a barra do GNOME e redesenha a janela
 
@@ -173,7 +166,7 @@ class PaginaHoje(Gtk.Box):
             self.lista.remove(filho)
         lista = entradas.do_dia(self.app.conn, hoje)
         for e in lista:
-            row = Adw.ActionRow(title=f"{_nome_cliente(e)} · {e['atividade']}", subtitle=e["descricao"], activatable=True)
+            row = Adw.ActionRow(title=entradas.rotulo(e), subtitle=e["descricao"], activatable=True)
             row.add_suffix(Gtk.Label(label=f"{_hhmm(e['inicio'])}–{_hhmm(e['fim'])}   {gargalos.fmt_h(e['minutos'])}",
                                      css_classes=["numeric"]))
             row.connect("activated", lambda _r, ent=e: DialogoEntrada(self.get_root(), self.app, ent, self.atualizar).present(self.get_root()))
@@ -191,19 +184,18 @@ class DialogoEntrada(Adw.Dialog):
         grupo = Adw.PreferencesGroup()
         v = valores or {}
         self.desc = Adw.EntryRow(title="Descrição", text=v.get("descricao", (entrada or {}).get("descricao", "")))
-        self.clientes = self._itens("clientes", (entrada or {}).get("cliente_id"))
-        self.atividades = self._itens("atividades", (entrada or {}).get("atividade_id"))
-        self.cli = self._combo("Cliente", self.clientes, (entrada or {}).get("cliente_id"))
-        self.ati = self._combo("Atividade", self.atividades, (entrada or {}).get("atividade_id"))
-        if "cli_idx" in v:
-            self.cli.set_selected(v["cli_idx"])
-        if "ati_idx" in v:
-            self.ati.set_selected(v["ati_idx"])
+        self.clientes = self._itens("clientes", (entrada or {}).get("cliente_ids", []))
+        self.atividades = self._itens("atividades", (entrada or {}).get("atividade_ids", []))
+        self.cli = self._linha("Clientes", SEM_CLIENTE, self.clientes,
+                               v.get("cliente_ids", (entrada or {}).get("cliente_ids", [])))
+        # entrada nova começa com a primeira atividade marcada, como o combo antigo fazia
+        padrao_ati = entrada["atividade_ids"] if entrada else [i["id"] for i in self.atividades[:1]]
+        self.ati = self._linha("Atividades", "Atividade", self.atividades, v.get("atividade_ids", padrao_ati))
         ini_txt = _hhmm((entrada or {}).get("inicio")) if entrada else ""
         fim_txt = _hhmm((entrada or {}).get("fim")) if entrada and entrada.get("fim") else ""
         self.ini = Adw.EntryRow(title="Início (HH:MM)", text=v.get("inicio", ini_txt))
         self.fim = Adw.EntryRow(title="Fim (HH:MM)", text=v.get("fim", fim_txt))
-        for w in (self.desc, self.cli, self.ati, self.ini, self.fim):
+        for w in (self.desc, self._linha_cli, self._linha_ati, self.ini, self.fim):
             grupo.add(w)
         if not entrada:
             grupo.set_description("Deixe Início e Fim vazios para iniciar agora.")
@@ -240,25 +232,27 @@ class DialogoEntrada(Adw.Dialog):
         vazio = not self.ini.get_text().strip() and not self.fim.get_text().strip()
         self.btn_salvar.set_label("Iniciar agora" if vazio else "Salvar")
 
-    def _itens(self, tabela, id_da_entrada):
-        """Ativos, mais o arquivado da própria entrada (no fim), para Salvar não trocar o vínculo."""
+    def _itens(self, tabela, ids_da_entrada):
+        """Ativos, mais os arquivados da própria entrada (no fim), para Salvar não perder o vínculo."""
         itens = cadastros.listar(self.app.conn, tabela)
-        if tabela == "clientes":
-            itens.insert(0, {"id": None, "nome": SEM_CLIENTE})
-        if id_da_entrada is not None and all(i["id"] != id_da_entrada for i in itens):
+        faltam = [i for i in ids_da_entrada if all(it["id"] != i for it in itens)]
+        if faltam:
             for i in cadastros.listar(self.app.conn, tabela, incluir_arquivados=True):
-                if i["id"] == id_da_entrada:
+                if i["id"] in faltam:
                     itens.append(dict(i, nome=f"{i['nome']} (arquivado)"))
         return itens
 
-    def _combo(self, titulo, itens, selecionado):
-        combo = Adw.ComboRow(title=titulo)
-        modelo = Gtk.StringList.new([i["nome"] for i in itens])
-        combo.set_model(modelo)
-        for idx, i in enumerate(itens):
-            if i["id"] == selecionado:
-                combo.set_selected(idx)
-        return combo
+    def _linha(self, titulo, vazio, itens, selecionados):
+        seletor = SeletorMultiplo(vazio, valign=Gtk.Align.CENTER)
+        seletor.set_itens(itens, selecionados)
+        linha = Adw.ActionRow(title=titulo)
+        linha.add_suffix(seletor)
+        linha.set_activatable_widget(seletor)
+        if titulo == "Clientes":
+            self._linha_cli = linha
+        else:
+            self._linha_ati = linha
+        return seletor
 
     def _hora(self, texto, base_iso):
         try:
@@ -273,13 +267,11 @@ class DialogoEntrada(Adw.Dialog):
             if resp == "apagar":
                 entradas.apagar(self.app.conn, self.entrada["id"])
             elif resp == "salvar":
-                if not self.atividades:
-                    raise ValueError("cadastre pelo menos uma atividade")
-                cid = self.clientes[self.cli.get_selected()]["id"]
-                aid = self.atividades[self.ati.get_selected()]["id"]
+                cids = self.cli.get_selecionados()
+                aids = self.ati.get_selecionados()
                 base = (self.entrada or {}).get("inicio")
                 if not self.entrada and not self.ini.get_text().strip() and not self.fim.get_text().strip():
-                    entradas.iniciar(self.app.conn, cid, aid, self.desc.get_text())
+                    entradas.iniciar(self.app.conn, cids, aids, self.desc.get_text())
                     self.app.servico.notificar()
                     self.depois()
                     self.close()
@@ -288,7 +280,7 @@ class DialogoEntrada(Adw.Dialog):
                 fim_txt = self.fim.get_text().strip()
                 fim = self._hora(fim_txt, base) if fim_txt else None
                 if self.entrada:
-                    campos = dict(descricao=self.desc.get_text(), cliente_id=cid, atividade_id=aid, inicio=ini)
+                    campos = dict(descricao=self.desc.get_text(), cliente_id=cids, atividade_id=aids, inicio=ini)
                     if fim is not None:
                         if fim <= ini:
                             raise ValueError("fim precisa ser depois do início")
@@ -297,7 +289,7 @@ class DialogoEntrada(Adw.Dialog):
                 else:
                     if fim is None:
                         raise ValueError("entrada passada precisa de fim")
-                    entradas.criar_manual(self.app.conn, ini, fim, cid, aid, self.desc.get_text())
+                    entradas.criar_manual(self.app.conn, ini, fim, cids, aids, self.desc.get_text())
             else:
                 self.close()
                 return
