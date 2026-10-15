@@ -163,14 +163,18 @@ def editar(conn, id, **campos):
     atual_e = por_id(conn, id)
     if atual_e is None:
         return
+    campos_originais = set(campos)
+    mexe_vinculos = "cliente_id" in campos or "atividade_id" in campos
     cliente_ids = _ids(campos.pop("cliente_id")) if "cliente_id" in campos else atual_e["cliente_ids"]
     atividade_ids = _ids(campos.pop("atividade_id")) if "atividade_id" in campos else atual_e["atividade_ids"]
-    _exigir_atividade(atividade_ids)
+    if "atividade_id" in campos_originais:
+        _exigir_atividade(atividade_ids)
     if campos:
         valores = {k: (fmt(v) if k in ("inicio", "fim") and v is not None else v) for k, v in campos.items()}
         sets = ", ".join(f"{k} = ?" for k in valores)
         conn.execute(f"update entradas set {sets} where id = ?", (*valores.values(), id))
-    _gravar_vinculos(conn, id, cliente_ids, atividade_ids)
+    if mexe_vinculos:
+        _gravar_vinculos(conn, id, cliente_ids, atividade_ids)
     conn.commit()
 
 

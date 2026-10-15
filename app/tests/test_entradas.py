@@ -196,3 +196,17 @@ def test_recentes_pula_combinacao_com_arquivado(conn, ids):
     entradas.criar_manual(conn, T0, T0 + timedelta(hours=1), [c, c2], a)
     cadastros.arquivar(conn, "clientes", c2)
     assert entradas.recentes(conn) == []
+
+
+def test_editar_horario_e_descricao_em_entrada_legada_sem_vinculos(conn, ids):
+    cur = conn.execute("insert into entradas(inicio, descricao) values(?, ?)", (T0.isoformat(timespec="seconds"), "legada"))
+    conn.commit()
+    eid = cur.lastrowid
+    fim = T0 + timedelta(minutes=10)
+    entradas.editar(conn, eid, fim=fim)
+    entradas.editar(conn, eid, descricao="ajustada")
+    e = entradas.por_id(conn, eid)
+    assert e["descricao"] == "ajustada" and e["fim"] == fim.isoformat(timespec="seconds")
+    assert e["atividade_ids"] == [] and e["cliente_ids"] == []
+    with pytest.raises(ValueError, match="escolha pelo menos uma atividade"):
+        entradas.editar(conn, eid, atividade_id=[])
