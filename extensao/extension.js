@@ -275,9 +275,9 @@ class Indicador extends PanelMenu.Button {
         this.menu.addMenuItem(this._recentes);
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-        this._mostrarCartao = new PopupMenu.PopupMenuItem('Mostrar cartão');
-        this._mostrarCartao.connect('activate', () => this._cartaoVisivel(true));
-        this._mostrarCartao.visible = false;
+        this._mostrarCartao = new PopupMenu.PopupSwitchMenuItem('Cartão flutuante',
+            this._settings.get_boolean('cartao-flutuante'));
+        this._mostrarCartao.connect('toggled', (_i, ligado) => this._cartaoVisivel(ligado));
         this.menu.addMenuItem(this._mostrarCartao);
         const abrir = new PopupMenu.PopupMenuItem('Abrir relatório');
         abrir.connect('activate', () => this._proxy?.AbrirJanelaRemote(() => {}));
@@ -302,23 +302,22 @@ class Indicador extends PanelMenu.Button {
         this._atualizarCartao();
     }
 
-    // O X guarda o id da entrada escondida (sobrevive a bloqueio de tela e reinicio do servico);
-    // uma tarefa nova tem id novo e aparece sozinha.
+    // O cartão é opcional e vem desligado: a barra já mostra o tempo. O X e o interruptor
+    // do menu gravam a mesma chave, que sobrevive a bloqueio de tela e reinício do serviço.
     _cartaoVisivel(sim) {
-        this._settings.set_int('cartao-oculto-id', sim || !this._entrada ? -1 : this._entrada.id);
+        this._settings.set_boolean('cartao-flutuante', sim);
         this._atualizarCartao();
     }
 
     _atualizarCartao() {
         if (this._destruido) return;
+        const ligado = this._settings.get_boolean('cartao-flutuante');
+        if (this._mostrarCartao.state !== ligado) this._mostrarCartao.setToggleState(ligado);
         if (!this._entrada) {
             this._cartao.esconder();
-            this._mostrarCartao.visible = false;
             return;
         }
-        const visivel = this._settings.get_int('cartao-oculto-id') !== this._entrada.id;
-        this._mostrarCartao.visible = !visivel;
-        if (visivel) {
+        if (ligado) {
             this._cartao.mostrar(this._entrada);
             this._cartao.atualizar(segundosDesde(this._entrada.inicio));
         } else {

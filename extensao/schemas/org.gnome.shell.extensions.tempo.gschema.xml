@@ -5,9 +5,9 @@
       <default>['&lt;Super&gt;t']</default>
       <summary>Atalho que abre o menu do Tempo</summary>
     </key>
-    <key name="cartao-oculto-id" type="i">
-      <default>-1</default>
-      <summary>Id da entrada cujo cartão foi fechado com o X (-1 = nenhum); a próxima tarefa mostra de novo</summary>
+    <key name="cartao-flutuante" type="b">
+      <default>false</default>
+      <summary>Mostrar o cartão flutuante com o cronômetro enquanto uma tarefa roda (a barra já mostra o tempo)</summary>
     </key>
     <key name="cartao-x" type="i">
       <default>-1</default>

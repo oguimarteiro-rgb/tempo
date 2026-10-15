@@ -26,6 +26,9 @@ for i in $(seq 1 10); do $S.Versao >/dev/null 2>&1 && break; sleep 1; done
 $S.Iniciar 0 1 "teste headless" >/dev/null
 gsettings set org.gnome.shell enabled-extensions "[\"tempo@oguim.com\"]"
 gsettings set org.gnome.shell disable-user-extensions false
+# O cartão vem desligado por padrão; o teste liga pra conferir que ele é criado sem erro.
+gsettings --schemadir "$HOME/.local/share/gnome-shell/extensions/tempo@oguim.com/schemas" \
+  set org.gnome.shell.extensions.tempo cartao-flutuante true
 echo "$(date +%T) shell sobe" >> "$T/passos.log"
 gnome-shell --devkit > "$T/shell.log" 2>&1 & echo $! >> "$T/pids"
 for i in $(seq 1 150); do grep -qE "Tempo: |JS ERROR|tempo@oguim.com: Error" "$T/shell.log" && break; sleep 1; done
