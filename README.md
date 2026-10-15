@@ -29,8 +29,11 @@ imprime o comando `dnf` para você rodar no Terminal de verdade e depois continu
   cartão no canto inferior direito com o cronômetro por cima de tudo (cores e fontes do
   @oguim.criativo). Arrasta com o mouse, tem Parar e um X que desliga de novo.
 - No menu: **Iniciar / Parar**, **Trocar para …** (aparece enquanto roda), campo de
-  descrição, seletores **Cliente** e **Atividade**, os 5 **Recentes** (um clique inicia)
-  e **Abrir relatório**.
+  descrição, seletores **Cliente** e **Atividade** com marcação múltipla (clicar marca e
+  desmarca, o menu fica aberto), os 5 **Recentes** (um clique inicia) e **Abrir relatório**.
+- Uma entrada pode ter vários clientes e várias atividades (vibecoding + edição + roteiro,
+  pessoal + NP Hub). Nos Gargalos e no resumo do Telegram cada um recebe o tempo inteiro, e a
+  linha "Combinado" mostra quanto rodou em modo múltiplo. O primeiro marcado é o principal.
 - A janela do relatório tem três abas:
   - **Hoje**: cartão pra iniciar só com o nome (Enter) e ver o cronômetro rodando,
     entradas do dia, edição, apagar, entrada manual e total. Cliente é opcional
