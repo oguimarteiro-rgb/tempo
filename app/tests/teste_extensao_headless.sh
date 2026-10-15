@@ -35,7 +35,7 @@ for i in $(seq 1 150); do grep -qE "Tempo: |JS ERROR|tempo@oguim.com: Error" "$T
 echo "$(date +%T) cartão 1 visto" >> "$T/passos.log"
 sleep 3
 $S.Parar >/dev/null; echo "$(date +%T) parou" >> "$T/passos.log"; sleep 3
-$S.Iniciar 0 2 "segunda" >/dev/null; echo "$(date +%T) iniciou 2" >> "$T/passos.log"; sleep 4
+$S.IniciarVarios "[]" "[1, 2]" "segunda" >/dev/null; echo "$(date +%T) iniciou 2" >> "$T/passos.log"; sleep 4
 xargs -r kill < "$T/pids"; sleep 2; : > "$T/pids"
 ' >/dev/null 2>&1
 
